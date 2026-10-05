@@ -60,7 +60,6 @@ function fallbackDecision(ctx: AiTradeContext): AiManagementDecision {
 function sanitizeStop(ctx: AiTradeContext, proposed: unknown): number | null {
   const n = Number(proposed);
   if (!Number.isFinite(n)) return null;
-  // A IA nunca pode afastar o stop e aumentar o risco original.
   if (ctx.side === "LONG") {
     if (n < ctx.originalStop || n > ctx.currentPrice) return null;
     return Math.max(n, ctx.currentStop);
@@ -74,7 +73,7 @@ export async function manageTradeWithAi(ctx: AiTradeContext): Promise<AiManageme
   const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
   if (!apiKey) return fallbackDecision(ctx);
 
-  const system = `Você é o gestor de risco contextual do Aurum Pulse para XAUUSD. Responda sempre em português e APENAS em JSON válido.\n\nRegras absolutas:\n1. Nunca aumente o risco original. Nunca afaste o stop para além do stop original.\n2. O stop original é a invalidação máxima e não pode ser removido.\n3. Diferencie pullback saudável de quebra de tese. Não encerre apenas porque o preço está temporariamente contra.\n4. Ações permitidas: MANTER, PROTEGER, BREAKEVEN, TRAILING, PARCIAL, ENCERRAR.\n5. Se sugerir stop, ele deve reduzir ou manter o risco, nunca ampliar.\n6. Não invente dados ausentes.\n7. Priorize estrutura, liquidez, displacement, BOS/CHoCH, OB/FVG e comportamento multi-timeframe informados no contexto.\n\nFormato JSON: {"action":"MANTER|PROTEGER|BREAKEVEN|TRAILING|PARCIAL|ENCERRAR","suggestedStop":number|null,"partialPercent":number|null,"confidence":0-100,"reason":"texto curto","evidences":["..."],"thesisStillValid":boolean}`;
+  const system = `Você é o gestor de risco contextual do Aurum Pulse para XAUUSD. Responda sempre em português.\n\nRegras absolutas:\n1. Nunca aumente o risco original. Nunca afaste o stop para além do stop original.\n2. O stop original é a invalidação máxima e não pode ser removido.\n3. Diferencie pullback saudável de quebra de tese. Não encerre apenas porque o preço está temporariamente contra.\n4. Ações permitidas: MANTER, PROTEGER, BREAKEVEN, TRAILING, PARCIAL, ENCERRAR.\n5. Se sugerir stop, ele deve reduzir ou manter o risco, nunca ampliar.\n6. Não invente dados ausentes.\n7. Priorize estrutura, liquidez, deslocamento, BOS/CHoCH, OB/FVG e comportamento multi-timeframe informados no contexto.\n8. Quando a evidência for insuficiente, prefira MANTER em vez de antecipar uma saída por medo.`;
 
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
@@ -82,7 +81,30 @@ export async function manageTradeWithAi(ctx: AiTradeContext): Promise<AiManageme
     body: JSON.stringify({
       model,
       temperature: 0.1,
-      max_completion_tokens: 700,
+      reasoning_effort: "low",
+      include_reasoning: false,
+      max_completion_tokens: 500,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "gestao_operacao",
+          strict: true,
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              action: { type: "string", enum: ["MANTER","PROTEGER","BREAKEVEN","TRAILING","PARCIAL","ENCERRAR"] },
+              suggestedStop: { anyOf: [{ type: "number" }, { type: "null" }] },
+              partialPercent: { anyOf: [{ type: "number" }, { type: "null" }] },
+              confidence: { type: "number", minimum: 0, maximum: 100 },
+              reason: { type: "string" },
+              evidences: { type: "array", items: { type: "string" }, maxItems: 6 },
+              thesisStillValid: { type: "boolean" }
+            },
+            required: ["action","suggestedStop","partialPercent","confidence","reason","evidences","thesisStillValid"]
+          }
+        }
+      },
       messages: [
         { role: "system", content: system },
         { role: "user", content: JSON.stringify(ctx) }
@@ -94,7 +116,7 @@ export async function manageTradeWithAi(ctx: AiTradeContext): Promise<AiManageme
   const data = await response.json();
   const text = String(data?.choices?.[0]?.message?.content || "").trim();
   let parsed: any;
-  try { parsed = JSON.parse(text.replace(/^```json\s*/i, "").replace(/```$/i, "").trim()); }
+  try { parsed = JSON.parse(text); }
   catch { return fallbackDecision(ctx); }
   const action: AiManagementAction = allowed.has(parsed?.action) ? parsed.action : "MANTER";
   const suggestedStop = sanitizeStop(ctx, parsed?.suggestedStop);
