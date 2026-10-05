@@ -6,9 +6,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 function clampDays(value: string | null) {
-  const n = Number(value ?? 7);
-  if (!Number.isFinite(n)) return 7;
-  return Math.max(3, Math.min(30, Math.floor(n)));
+  const n = Number(value ?? 30);
+  if (!Number.isFinite(n)) return 30;
+  return Math.max(7, Math.min(120, Math.floor(n)));
 }
 
 export async function GET(request: NextRequest) {
@@ -17,14 +17,22 @@ export async function GET(request: NextRequest) {
     const epic = await resolveGoldEpic();
     const end = new Date();
     const start = new Date(end.getTime() - days * 86_400_000);
-    const chunks: any[] = [];
+    const windows: Array<{ from: Date; to: Date }> = [];
 
-    // 3-day windows keep M5 responses below Capital.com's 1000-value limit.
+    // 3-day windows keep M5 responses below Capital.com's per-request candle cap.
     for (let cursor = start.getTime(); cursor < end.getTime(); cursor += 3 * 86_400_000) {
-      const from = new Date(cursor);
-      const to = new Date(Math.min(cursor + 3 * 86_400_000 - 1, end.getTime()));
-      const part = await getHistoricalPrices(epic, "MINUTE_5", from, to, 1000);
-      chunks.push(...part);
+      windows.push({
+        from: new Date(cursor),
+        to: new Date(Math.min(cursor + 3 * 86_400_000 - 1, end.getTime()))
+      });
+    }
+
+    const chunks: any[] = [];
+    // Small batches avoid a burst of broker requests while keeping a 90-120 day run practical.
+    for (let i = 0; i < windows.length; i += 4) {
+      const batch = windows.slice(i, i + 4);
+      const parts = await Promise.all(batch.map(w => getHistoricalPrices(epic, "MINUTE_5", w.from, w.to, 1000)));
+      for (const part of parts) chunks.push(...part);
     }
 
     const seen = new Map<string, any>();
