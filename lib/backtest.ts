@@ -8,8 +8,12 @@ type Candle = {
   close: number;
 };
 
+type Side = "LONG" | "SHORT";
+type Zone = { low: number; high: number; time: number; kind: "OB" | "FVG" };
+type Swing = { index: number; time: number; price: number; type: "HIGH" | "LOW" };
+
 export type BacktestTrade = {
-  side: "LONG" | "SHORT";
+  side: Side;
   signalTime: string;
   entryTime: string;
   entry: number;
@@ -18,7 +22,7 @@ export type BacktestTrade = {
   rr: number;
   result: "TP" | "SL" | "EXPIRED";
   rMultiple: number;
-  fibonacciFilter: boolean;
+  score: number;
   reasons: string[];
 };
 
@@ -64,97 +68,259 @@ function aggregate(source: Candle[], minutes: number): Candle[] {
   return out;
 }
 
-function ema(values: number[], period: number): number | null {
-  if (values.length < period) return null;
-  const k = 2 / (period + 1);
-  let value = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  for (let i = period; i < values.length; i++) value = values[i] * k + value * (1 - k);
-  return value;
-}
-
 function completedAt(candles: Candle[], now: number, tfMinutes: number) {
   const cutoff = now - tfMinutes * 60_000;
   return candles.filter(c => c.time <= cutoff);
 }
 
-function fibFilter(m15: Candle[], side: "LONG" | "SHORT", price: number) {
-  const lookback = m15.slice(-24);
-  if (lookback.length < 12) return { pass: false, zone: [0, 0] as [number, number] };
-  const high = Math.max(...lookback.map(c => c.high));
-  const low = Math.min(...lookback.map(c => c.low));
-  const range = high - low;
-  if (range <= 0) return { pass: false, zone: [0, 0] as [number, number] };
-  const a = side === "LONG" ? high - range * 0.618 : low + range * 0.5;
-  const b = side === "LONG" ? high - range * 0.5 : low + range * 0.618;
-  const zone: [number, number] = [Math.min(a, b), Math.max(a, b)];
-  return { pass: price >= zone[0] && price <= zone[1], zone };
+function range(c: Candle) { return Math.max(0.000001, c.high - c.low); }
+function body(c: Candle) { return Math.abs(c.close - c.open); }
+function bullish(c: Candle) { return c.close > c.open; }
+function bearish(c: Candle) { return c.close < c.open; }
+function overlaps(price: number, z: Zone | null, tolerance = 0) {
+  return !!z && price >= z.low - tolerance && price <= z.high + tolerance;
 }
 
-function evaluateVariant(m5: Candle[], useFib: boolean): BacktestTrade[] {
+// Confirmed pivots only: the right-hand candles must already be closed.
+function swings(candles: Candle[], left = 2, right = 2): Swing[] {
+  const out: Swing[] = [];
+  for (let i = left; i < candles.length - right; i++) {
+    const c = candles[i];
+    let isHigh = true, isLow = true;
+    for (let j = i - left; j <= i + right; j++) {
+      if (j === i) continue;
+      if (candles[j].high >= c.high) isHigh = false;
+      if (candles[j].low <= c.low) isLow = false;
+    }
+    if (isHigh) out.push({ index: i, time: c.time, price: c.high, type: "HIGH" });
+    if (isLow) out.push({ index: i, time: c.time, price: c.low, type: "LOW" });
+  }
+  return out.sort((a, b) => a.time - b.time);
+}
+
+function flow(candles: Candle[]): Side | null {
+  const s = swings(candles.slice(-90));
+  const highs = s.filter(x => x.type === "HIGH").slice(-2);
+  const lows = s.filter(x => x.type === "LOW").slice(-2);
+  if (highs.length < 2 || lows.length < 2) return null;
+  const up = highs[1].price > highs[0].price && lows[1].price > lows[0].price;
+  const down = highs[1].price < highs[0].price && lows[1].price < lows[0].price;
+  return up ? "LONG" : down ? "SHORT" : null;
+}
+
+function latestLeg(candles: Candle[], side: Side) {
+  const s = swings(candles.slice(-100));
+  if (side === "LONG") {
+    const highs = s.filter(x => x.type === "HIGH");
+    const h = highs.at(-1);
+    if (!h) return null;
+    const lows = s.filter(x => x.type === "LOW" && x.time < h.time);
+    const l = lows.at(-1);
+    if (!l || h.price <= l.price) return null;
+    return { start: l.price, end: h.price, startTime: l.time, endTime: h.time };
+  }
+  const lows = s.filter(x => x.type === "LOW");
+  const l = lows.at(-1);
+  if (!l) return null;
+  const highs = s.filter(x => x.type === "HIGH" && x.time < l.time);
+  const h = highs.at(-1);
+  if (!h || h.price <= l.price) return null;
+  return { start: h.price, end: l.price, startTime: h.time, endTime: l.time };
+}
+
+function fibZone(candles: Candle[], side: Side): Zone | null {
+  const leg = latestLeg(candles, side);
+  if (!leg) return null;
+  const r = Math.abs(leg.end - leg.start);
+  if (!r) return null;
+  const a = side === "LONG" ? leg.end - r * 0.786 : leg.end + r * 0.618;
+  const b = side === "LONG" ? leg.end - r * 0.618 : leg.end + r * 0.786;
+  return { low: Math.min(a, b), high: Math.max(a, b), time: leg.endTime, kind: "OB" };
+}
+
+function latestFvg(candles: Candle[], side: Side): Zone | null {
+  for (let i = candles.length - 1; i >= 2 && i >= candles.length - 35; i--) {
+    const a = candles[i - 2], c = candles[i];
+    if (side === "LONG" && c.low > a.high) return { low: a.high, high: c.low, time: c.time, kind: "FVG" };
+    if (side === "SHORT" && c.high < a.low) return { low: c.high, high: a.low, time: c.time, kind: "FVG" };
+  }
+  return null;
+}
+
+function latestOrderBlock(candles: Candle[], side: Side, maxLookback = 45): Zone | null {
+  if (candles.length < 5) return null;
+  const start = Math.max(1, candles.length - maxLookback);
+  for (let i = candles.length - 3; i >= start; i--) {
+    const base = candles[i];
+    const n1 = candles[i + 1], n2 = candles[i + 2];
+    const displacement = Math.abs(n2.close - base.close);
+    const localRanges = candles.slice(Math.max(0, i - 8), i + 1).map(range);
+    const avgRange = localRanges.reduce((a, b) => a + b, 0) / Math.max(1, localRanges.length);
+    if (side === "LONG") {
+      const broke = n2.close > Math.max(...candles.slice(Math.max(0, i - 8), i + 1).map(c => c.high));
+      if (bearish(base) && bullish(n1) && bullish(n2) && displacement > avgRange * 1.15 && broke) {
+        return { low: base.low, high: Math.max(base.open, base.close), time: base.time, kind: "OB" };
+      }
+    } else {
+      const broke = n2.close < Math.min(...candles.slice(Math.max(0, i - 8), i + 1).map(c => c.low));
+      if (bullish(base) && bearish(n1) && bearish(n2) && displacement > avgRange * 1.15 && broke) {
+        return { low: Math.min(base.open, base.close), high: base.high, time: base.time, kind: "OB" };
+      }
+    }
+  }
+  return null;
+}
+
+function candlePattern(candles: Candle[], side: Side) {
+  if (candles.length < 2) return null;
+  const c = candles.at(-1)!;
+  const p = candles.at(-2)!;
+  const upper = c.high - Math.max(c.open, c.close);
+  const lower = Math.min(c.open, c.close) - c.low;
+  const r = range(c);
+  if (side === "LONG") {
+    if (bullish(c) && bearish(p) && c.open <= p.close && c.close >= p.open) return "bullish engulfing";
+    if (lower >= r * 0.45 && c.close > c.open && c.close >= c.low + r * 0.65) return "bullish rejection/pin";
+  } else {
+    if (bearish(c) && bullish(p) && c.open >= p.close && c.close <= p.open) return "bearish engulfing";
+    if (upper >= r * 0.45 && c.close < c.open && c.close <= c.low + r * 0.35) return "bearish rejection/pin";
+  }
+  return null;
+}
+
+function liquiditySweep(candles: Candle[], side: Side) {
+  if (candles.length < 12) return false;
+  const c = candles.at(-1)!;
+  const prior = candles.slice(-11, -1);
+  if (side === "LONG") {
+    const level = Math.min(...prior.map(x => x.low));
+    return c.low < level && c.close > level;
+  }
+  const level = Math.max(...prior.map(x => x.high));
+  return c.high > level && c.close < level;
+}
+
+function microBos(candles: Candle[], side: Side) {
+  if (candles.length < 8) return false;
+  const c = candles.at(-1)!;
+  const prior = candles.slice(-7, -1);
+  return side === "LONG" ? c.close > Math.max(...prior.map(x => x.high)) : c.close < Math.min(...prior.map(x => x.low));
+}
+
+function defendedFib(candles: Candle[], side: Side, fib: Zone | null) {
+  if (!fib || candles.length < 2) return false;
+  const c = candles.at(-1)!;
+  const touched = c.low <= fib.high && c.high >= fib.low;
+  if (!touched) return false;
+  const midpoint = (fib.low + fib.high) / 2;
+  return side === "LONG" ? c.close > midpoint && bullish(c) : c.close < midpoint && bearish(c);
+}
+
+function candidateScore(params: {
+  side: Side; h4: Candle[]; h1: Candle[]; m15: Candle[]; m5: Candle[];
+}) {
+  const { side, h4, h1, m15, m5 } = params;
+  let score = 0;
+  const reasons: string[] = [];
+  const h4Flow = flow(h4);
+  const h1Flow = flow(h1);
+  const m15Flow = flow(m15);
+  const fib = fibZone(m15, side);
+  const m5Ob = latestOrderBlock(m5, side, 36);
+  const macroOb = latestOrderBlock(h1, side, 55) ?? latestOrderBlock(h4, side, 55);
+  const fvg5 = latestFvg(m5, side);
+  const fvg15 = latestFvg(m15, side);
+  const price = m5.at(-1)!.close;
+  const tol = range(m5.at(-1)!) * 0.25;
+
+  if (h1Flow === side) { score += 24; reasons.push(`H1 fluxo estrutural ${side}`); }
+  if (h4Flow === side) { score += 12; reasons.push(`H4 contexto macro ${side}`); }
+  else if (h4Flow && h4Flow !== side) { score -= 8; reasons.push(`H4 contrário ao intraday`); }
+  if (m15Flow === side) { score += 14; reasons.push(`M15 estrutura alinhada`); }
+
+  if (defendedFib(m5, side, fib)) { score += 16; reasons.push(`Fibonacci 61,8%-78,6% defendido`); }
+  else if (overlaps(price, fib, tol)) { score += 8; reasons.push(`Preço em Fibonacci 61,8%-78,6%`); }
+
+  if (overlaps(price, m5Ob, tol)) { score += 11; reasons.push(`Mitigação de order block M5`); }
+  if (overlaps(price, macroOb, tol * 3)) { score += 8; reasons.push(`Order block macro H1/H4 em confluência`); }
+  if (overlaps(price, fvg5, tol)) { score += 8; reasons.push(`FVG M5 em confluência`); }
+  else if (overlaps(price, fvg15, tol * 2)) { score += 6; reasons.push(`FVG M15 em confluência`); }
+
+  if (liquiditySweep(m5, side)) { score += 12; reasons.push(`Sweep de liquidez M5`); }
+  const pattern = candlePattern(m5, side);
+  if (pattern) { score += 10; reasons.push(`Padrão de candle: ${pattern}`); }
+  if (microBos(m5, side)) { score += 12; reasons.push(`BOS de microestrutura M5`); }
+
+  return { score, reasons, fib, m5Ob, macroOb, fvg5, fvg15, h1Flow, h4Flow, m15Flow };
+}
+
+function evaluate(m5: Candle[], minScore = 58, rr = 1.5): BacktestTrade[] {
   const m15all = aggregate(m5, 15);
   const h1all = aggregate(m5, 60);
+  const h4all = aggregate(m5, 240);
   const trades: BacktestTrade[] = [];
   let blockedUntil = -1;
 
-  for (let i = 80; i < m5.length - 1; i++) {
+  for (let i = 160; i < m5.length - 1; i++) {
     if (i <= blockedUntil) continue;
     const signal = m5[i];
     const now = signal.time + 5 * 60_000;
-    const h1 = completedAt(h1all, now, 60);
+    const m5hist = m5.slice(0, i + 1);
     const m15 = completedAt(m15all, now, 15);
-    if (h1.length < 55 || m15.length < 30) continue;
+    const h1 = completedAt(h1all, now, 60);
+    const h4 = completedAt(h4all, now, 240);
+    if (m15.length < 45 || h1.length < 45 || h4.length < 30) continue;
 
-    const h1Closes = h1.map(c => c.close);
-    const e20 = ema(h1Closes, 20);
-    const e50 = ema(h1Closes, 50);
-    if (e20 === null || e50 === null) continue;
-
-    const side: "LONG" | "SHORT" | null = e20 > e50 ? "LONG" : e20 < e50 ? "SHORT" : null;
+    // H1 is primary intraday flow; M15 can take over only when H1 is neutral and H4 does not oppose.
+    const h1f = flow(h1);
+    const m15f = flow(m15);
+    const h4f = flow(h4);
+    let side: Side | null = h1f;
+    if (!side && m15f && h4f !== (m15f === "LONG" ? "SHORT" : "LONG")) side = m15f;
     if (!side) continue;
 
-    const recent15 = m15.slice(-8);
-    const prior15 = m15.slice(-16, -8);
-    if (prior15.length < 8) continue;
-    const recentMean = recent15.reduce((s, c) => s + c.close, 0) / recent15.length;
-    const priorMean = prior15.reduce((s, c) => s + c.close, 0) / prior15.length;
-    const m15Aligned = side === "LONG" ? recentMean > priorMean : recentMean < priorMean;
-    if (!m15Aligned) continue;
+    const c = candidateScore({ side, h4, h1, m15, m5: m5hist });
+    if (c.score < minScore) continue;
 
-    const prev = m5[i - 1];
-    const prev2 = m5[i - 2];
-    const trigger = side === "LONG"
-      ? signal.close > prev.high && prev.low <= prev2.low
-      : signal.close < prev.low && prev.high >= prev2.high;
+    // Require an actual execution trigger, not score alone.
+    const trigger = microBos(m5hist, side) && (!!candlePattern(m5hist, side) || liquiditySweep(m5hist, side) || defendedFib(m5hist, side, c.fib));
     if (!trigger) continue;
-
-    const fib = fibFilter(m15, side, signal.close);
-    if (useFib && !fib.pass) continue;
 
     const entryCandle = m5[i + 1];
     const entry = entryCandle.open;
-    const structure = m5.slice(Math.max(0, i - 6), i + 1);
-    const structuralStop = side === "LONG"
-      ? Math.min(...structure.map(c => c.low))
-      : Math.max(...structure.map(c => c.high));
-    const risk = Math.abs(entry - structuralStop);
-    if (risk <= 0 || risk / entry > 0.006) continue;
-    const take = side === "LONG" ? entry + risk * 2 : entry - risk * 2;
+    const recent = m5.slice(Math.max(0, i - 10), i + 1);
+    const structural = side === "LONG" ? Math.min(...recent.map(c => c.low)) : Math.max(...recent.map(c => c.high));
+    const obStop = c.m5Ob ? (side === "LONG" ? c.m5Ob.low : c.m5Ob.high) : structural;
+    const rawStop = side === "LONG" ? Math.min(structural, obStop) : Math.max(structural, obStop);
+    const buffer = Math.max(entry * 0.00008, range(signal) * 0.08);
+    const stop = side === "LONG" ? rawStop - buffer : rawStop + buffer;
+    const risk = Math.abs(entry - stop);
+    if (risk <= 0 || risk / entry > 0.0055 || risk / entry < 0.00025) continue;
+
+    const take = side === "LONG" ? entry + risk * rr : entry - risk * rr;
+
+    // There must be enough clean space to the latest opposing swing/zone for >= minimum RR.
+    const oppOb = latestOrderBlock(m15, side === "LONG" ? "SHORT" : "LONG", 45);
+    if (oppOb) {
+      const obstacle = side === "LONG" ? oppOb.low : oppOb.high;
+      const roomR = side === "LONG" ? (obstacle - entry) / risk : (entry - obstacle) / risk;
+      if (roomR > 0 && roomR < rr) continue;
+    }
 
     let result: "TP" | "SL" | "EXPIRED" = "EXPIRED";
     let rMultiple = 0;
-    let exitIndex = Math.min(i + 36, m5.length - 1);
+    let exitIndex = Math.min(i + 48, m5.length - 1);
     for (let j = i + 1; j <= exitIndex; j++) {
-      const c = m5[j];
-      const stopHit = side === "LONG" ? c.low <= structuralStop : c.high >= structuralStop;
-      const tpHit = side === "LONG" ? c.high >= take : c.low <= take;
-      // Conservative when both are touched in the same candle: count stop first.
+      const bar = m5[j];
+      const stopHit = side === "LONG" ? bar.low <= stop : bar.high >= stop;
+      const tpHit = side === "LONG" ? bar.high >= take : bar.low <= take;
       if (stopHit) { result = "SL"; rMultiple = -1; exitIndex = j; break; }
-      if (tpHit) { result = "TP"; rMultiple = 2; exitIndex = j; break; }
+      if (tpHit) { result = "TP"; rMultiple = rr; exitIndex = j; break; }
     }
     if (result === "EXPIRED") {
       const exit = m5[exitIndex].close;
       rMultiple = side === "LONG" ? (exit - entry) / risk : (entry - exit) / risk;
-      rMultiple = Math.max(-1, Math.min(2, rMultiple));
+      rMultiple = Math.max(-1, Math.min(rr, rMultiple));
     }
 
     trades.push({
@@ -162,18 +328,13 @@ function evaluateVariant(m5: Candle[], useFib: boolean): BacktestTrade[] {
       signalTime: new Date(signal.time).toISOString(),
       entryTime: new Date(entryCandle.time).toISOString(),
       entry: Number(entry.toFixed(2)),
-      stop: Number(structuralStop.toFixed(2)),
+      stop: Number(stop.toFixed(2)),
       take: Number(take.toFixed(2)),
-      rr: 2,
+      rr,
       result,
       rMultiple: Number(rMultiple.toFixed(3)),
-      fibonacciFilter: useFib,
-      reasons: [
-        `H1 EMA20 ${side === "LONG" ? ">" : "<"} EMA50`,
-        `M15 momentum alinhado com ${side}`,
-        `M5 confirmou quebra de microestrutura`,
-        useFib ? `Preço dentro da retração Fibonacci 50%-61,8%` : `Fibonacci não exigido`
-      ]
+      score: c.score,
+      reasons: c.reasons
     });
     blockedUntil = exitIndex;
   }
@@ -200,35 +361,35 @@ function metrics(trades: BacktestTrade[], firstTime?: number, lastTime?: number)
     totalR: Number(totalR.toFixed(2)),
     profitFactor: grossLoss ? Number((grossWin / grossLoss).toFixed(2)) : grossWin > 0 ? 99 : 0,
     maxDrawdownR: Number(maxDrawdownR.toFixed(2)),
-    tradesPerDay: Number((trades.length / days).toFixed(2))
+    tradesPerDay: Number((trades.length / days).toFixed(2)),
+    averageScore: trades.length ? Number((trades.reduce((s, t) => s + t.score, 0) / trades.length).toFixed(1)) : 0
   };
 }
 
 export function runBacktest(raw: RawCandle[]) {
   const m5 = raw.map(normalize).filter((c): c is Candle => c !== null).sort((a, b) => a.time - b.time);
-  const withoutFib = evaluateVariant(m5, false);
-  const withFib = evaluateVariant(m5, true);
+  const trades = evaluate(m5, 58, 1.5);
   const first = m5[0]?.time;
   const last = m5[m5.length - 1]?.time;
   return {
     methodology: {
       lookahead: false,
-      entryTiming: "signal confirmed at M5 close; entry at next M5 open",
-      bias: "H1 EMA20 vs EMA50",
-      setup: "M15 momentum alignment",
-      trigger: "M5 microstructure break after local pullback",
-      stop: "recent M5 structural invalidation",
-      target: "2R",
-      fibTest: "compare identical strategy with and without 50%-61.8% retracement filter"
+      movingAverages: false,
+      entryTiming: "confluence confirmed at M5 close; entry at next M5 open",
+      macroContext: "confirmed H4/H1 swing flow + H1/H4 order blocks",
+      intradayContext: "M15 structure; M5 order blocks, FVG, liquidity sweep and micro BOS",
+      fibonacci: "identified M15 impulse leg; 61.8%-78.6% retracement; extra weight only when visibly defended by M5 close",
+      candlePatterns: "engulfing and rejection/pin patterns only inside the confluence process",
+      stop: "M5 structural/OB invalidation plus small volatility buffer",
+      target: "minimum fixed 1.5R with rejection if an opposing M15 OB blocks the path before 1.5R",
+      scoreThreshold: 58
     },
     sample: {
       barsM5: m5.length,
       from: first ? new Date(first).toISOString() : null,
       to: last ? new Date(last).toISOString() : null
     },
-    variants: {
-      withoutFibonacci: { metrics: metrics(withoutFib, first, last), trades: withoutFib },
-      withFibonacci: { metrics: metrics(withFib, first, last), trades: withFib }
-    }
+    metrics: metrics(trades, first, last),
+    trades
   };
 }
