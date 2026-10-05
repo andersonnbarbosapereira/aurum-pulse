@@ -3,6 +3,7 @@ import type { BaseCandidate } from "@/lib/ai-management-research";
 
 type Raw=any; type Side="LONG"|"SHORT"; type C={time:number;open:number;high:number;low:number;close:number};
 type Engine="LIQUIDITY_REVERSAL"|"INSTITUTIONAL_PULLBACK"|"LIQUIDITY_CONTINUATION";
+type Diag=BaseCandidate&{features:{h1Aligned:boolean;m15Aligned:boolean;bos:boolean;disp:boolean;ob:boolean;fvg:boolean;candle:boolean;sweep:boolean;counterSweep:boolean;fib:boolean;riskPct:number}};
 
 function mid(v:any){const b=Number(v?.bid),a=Number(v?.ask??v?.offer);if(Number.isFinite(b)&&Number.isFinite(a))return(b+a)/2;if(Number.isFinite(b))return b;if(Number.isFinite(a))return a;return null}
 function norm(r:Raw):C|null{const open=mid(r?.openPrice),high=mid(r?.highPrice),low=mid(r?.lowPrice),close=mid(r?.closePrice),s=r?.snapshotTimeUTC??r?.snapshotTime,time=s?Date.parse(String(s).endsWith("Z")?s:`${s}Z`):NaN;if([open,high,low,close].some(x=>x===null)||!Number.isFinite(time))return null;return{time,open:open!,high:high!,low:low!,close:close!}}
@@ -38,7 +39,7 @@ function scoreEngine(engine:Engine,x:any){
 }
 
 function build(raw5:Raw[],raw1:Raw[],engine:Engine,threshold:number){
-  const m5=raw5.map(norm).filter((x):x is C=>!!x).sort((a,b)=>a.time-b.time),m1=raw1.map(norm).filter((x):x is C=>!!x).sort((a,b)=>a.time-b.time),m15=agg(m5,15),h1=agg(m5,60),out:BaseCandidate[]=[];
+  const m5=raw5.map(norm).filter((x):x is C=>!!x).sort((a,b)=>a.time-b.time),m1=raw1.map(norm).filter((x):x is C=>!!x).sort((a,b)=>a.time-b.time),m15=agg(m5,15),h1=agg(m5,60),out:Diag[]=[];
   let p15=-1,p1=-1,pm1=-1;
   for(let i=120;i<m5.length-50;i++){
     const s=m5[i],ct=s.time+300000;
@@ -55,7 +56,7 @@ function build(raw5:Raw[],raw1:Raw[],engine:Engine,threshold:number){
       const en=m5[i+1].open,stop=side==="LONG"?Math.min(...a5.slice(-10).map(c=>c.low)):Math.max(...a5.slice(-10).map(c=>c.high)),risk=Math.abs(en-stop);
       if(risk<=0||risk/en>.005)continue;
       const take=side==="LONG"?en+risk*2:en-risk*2,path=m5.slice(i+1,Math.min(i+49,m5.length));
-      out.push({side,entry:en,stop,take,risk,time:s.time,baselineR:0,path,h1f,score,majorSweep:common.majorSweep,institutionalScore:engine==="INSTITUTIONAL_PULLBACK"?score:0,continuationScore:engine==="LIQUIDITY_CONTINUATION"?score:0,engineAgreement:1});
+      out.push({side,entry:en,stop,take,risk,time:s.time,baselineR:0,path,h1f,score,majorSweep:common.majorSweep,institutionalScore:engine==="INSTITUTIONAL_PULLBACK"?score:0,continuationScore:engine==="LIQUIDITY_CONTINUATION"?score:0,engineAgreement:1,features:{h1Aligned:h1f===side,m15Aligned:m15f===side,bos:common.bos,disp:common.disp,ob:common.ob,fvg:common.fvg,candle:common.candle,sweep:common.sweep,counterSweep:common.counterSweep,fib:common.fibM5,riskPct:risk/en}});
       break;
     }
   }
@@ -69,9 +70,27 @@ function stats(cs:BaseCandidate[]){
   return{trades,totalR:+totalR.toFixed(2),avgR:+(totalR/Math.max(1,trades)).toFixed(3),totalUsd:+totalUsd.toFixed(2),avgUsd:+(totalUsd/Math.max(1,trades)).toFixed(2),winRate:+(wins/Math.max(1,trades)*100).toFixed(1),fullStopRate:+(stops/Math.max(1,trades)*100).toFixed(1),maxDrawdownR:+dd.toFixed(2)};
 }
 
+
+function filteredStats(cs:Diag[],pred:(c:Diag)=>boolean){return stats(cs.filter(pred))}
+function diagnose(cs:Diag[]){
+  return {
+    all:stats(cs),
+    alignedBoth:filteredStats(cs,c=>c.features.h1Aligned&&c.features.m15Aligned),
+    bosAndDisp:filteredStats(cs,c=>c.features.bos&&c.features.disp),
+    alignedBosDisp:filteredStats(cs,c=>c.features.h1Aligned&&c.features.m15Aligned&&c.features.bos&&c.features.disp),
+    obOrFvgBos:filteredStats(cs,c=>(c.features.ob||c.features.fvg)&&c.features.bos),
+    fibBosDisp:filteredStats(cs,c=>c.features.fib&&c.features.bos&&c.features.disp),
+    riskTight:filteredStats(cs,c=>c.features.riskPct<=.0035),
+    noBos:filteredStats(cs,c=>!c.features.bos),
+    noDisp:filteredStats(cs,c=>!c.features.disp),
+    misalignedH1:filteredStats(cs,c=>!c.features.h1Aligned),
+    misalignedM15:filteredStats(cs,c=>!c.features.m15Aligned)
+  };
+}
+
 export function runIndependentEngineResearch(raw5:any[],raw1:any[]){
   const engines:Engine[]=["LIQUIDITY_REVERSAL","INSTITUTIONAL_PULLBACK","LIQUIDITY_CONTINUATION"],thresholds=[58,64,68,72];
   const results:any[]=[];
-  for(const engine of engines)for(const threshold of thresholds){const cs=build(raw5,raw1,engine,threshold);results.push({engine,threshold,...stats(cs)})}
+  for(const engine of engines)for(const threshold of thresholds){const cs=build(raw5,raw1,engine,threshold);results.push({engine,threshold,...stats(cs),diagnostics:(engine!=="LIQUIDITY_REVERSAL"&&[64,68].includes(threshold))?diagnose(cs):undefined})}
   return{results};
 }
