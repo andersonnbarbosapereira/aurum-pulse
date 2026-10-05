@@ -20,11 +20,7 @@ async function safeHistorical(epic:string,resolution:string,from:Date,to:Date){
 
 async function runJobs(epic:string,resolution:string,jobs:{from:Date;to:Date}[]){
   const out:any[]=[];
-  for(let i=0;i<jobs.length;i+=4){
-    const parts=await Promise.all(jobs.slice(i,i+4).map(j=>safeHistorical(epic,resolution,j.from,j.to)));
-    for(const p of parts)out.push(...p);
-    if(i+4<jobs.length)await sleep(650);
-  }
+  for(let i=0;i<jobs.length;i+=4){const parts=await Promise.all(jobs.slice(i,i+4).map(j=>safeHistorical(epic,resolution,j.from,j.to)));for(const p of parts)out.push(...p);if(i+4<jobs.length)await sleep(650);}
   return dedupe(out);
 }
 
@@ -48,11 +44,11 @@ function dedupe(out:any[]){const seen=new Map<string,any>();for(const c of out){
 
 export async function GET(){
   try{
-    const epic=await resolveGoldEpic(),end=new Date(),start=new Date(end.getTime()-90*86_400_000);
-    const m5=await fetchM5(epic,start,end);
+    const epic=await resolveGoldEpic(),end=new Date(),start90=new Date(end.getTime()-90*86_400_000),startM1=new Date(end.getTime()-30*86_400_000);
+    const m5=await fetchM5(epic,start90,end);
     await sleep(700);
-    const m1=await fetchM1LiquidSessions(epic,start,end);
-    const result=runResearch(m5,m1,90);
-    return NextResponse.json({mode:"five-engine-research",source:"Capital.com",epic,requestedDays:90,m1Coverage:"weekdays 06:00-20:00 UTC (London/New York liquidity window)",...result},{headers:{"X-Robots-Tag":"noindex"}});
+    const m1=await fetchM1LiquidSessions(epic,startM1,end);
+    const result=runResearch(m5,m1,90,30);
+    return NextResponse.json({mode:"five-engine-research",source:"Capital.com",epic,requestedDays:90,m1Coverage:"last 30 days, weekdays 06:00-20:00 UTC (auxiliary confirmation study)",...result},{headers:{"X-Robots-Tag":"noindex"}});
   }catch(error){const diagnostic=error instanceof Error?error.message:"UNKNOWN_ERROR";return NextResponse.json({status:"unavailable",error:"Research backtest could not be completed.",diagnostic},{status:502});}
 }
