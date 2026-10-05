@@ -49,13 +49,15 @@ async function fetchM1BrazilWindow(epic:string,start:Date,end:Date){
 
 function dedupe(out:any[]){const seen=new Map<string,any>();for(const c of out){const k=String(c?.snapshotTimeUTC??c?.snapshotTime);if(k)seen.set(k,c)}return[...seen.values()];}
 
-export async function GET(){
+export async function GET(request:Request){
   try{
-    const epic=await resolveGoldEpic(),end=new Date(),start90=new Date(end.getTime()-90*86_400_000),startM1=new Date(end.getTime()-30*86_400_000);
+    const url=new URL(request.url),requestedOffset=Number(url.searchParams.get("m1OffsetDays")??0),m1OffsetDays=[0,30,60].includes(requestedOffset)?requestedOffset:0;
+    const epic=await resolveGoldEpic(),end=new Date(),start90=new Date(end.getTime()-90*86_400_000);
+    const m1End=new Date(end.getTime()-m1OffsetDays*86_400_000),m1Start=new Date(m1End.getTime()-30*86_400_000);
     const m5=await fetchM5(epic,start90,end);
     await sleep(700);
-    const m1=await fetchM1BrazilWindow(epic,startM1,end);
+    const m1=await fetchM1BrazilWindow(epic,m1Start,m1End);
     const result=runResearch(m5,m1,90,30);
-    return NextResponse.json({mode:"five-engine-research",source:"Capital.com",epic,requestedDays:90,m1Coverage:"last 30 days, weekdays 21:00-15:30 America/Sao_Paulo (00:00-18:30 UTC)",...result},{headers:{"X-Robots-Tag":"noindex"}});
+    return NextResponse.json({mode:"three-engine-research",source:"Capital.com",epic,requestedDays:90,m1OffsetDays,m1Coverage:`30-day block ending ${m1OffsetDays} days before now; weekdays 21:00-15:30 America/Sao_Paulo`,...result},{headers:{"X-Robots-Tag":"noindex"}});
   }catch(error){const diagnostic=error instanceof Error?error.message:"UNKNOWN_ERROR";return NextResponse.json({status:"unavailable",error:"Research backtest could not be completed.",diagnostic},{status:502});}
 }
