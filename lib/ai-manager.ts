@@ -68,6 +68,20 @@ function sanitizeStop(ctx: AiTradeContext, proposed: unknown): number | null {
   return Math.min(n, ctx.currentStop);
 }
 
+function applyPolicyGate(ctx: AiTradeContext, d: AiManagementDecision): AiManagementDecision {
+  const r = ctx.unrealizedR;
+  if (["PROTEGER","BREAKEVEN","TRAILING"].includes(d.action) && r <= 0.25) {
+    return { ...d, action:"MANTER", suggestedStop:null, reason:`Portão de risco: ${d.reason} | Operação ainda não ganhou margem suficiente para proteção.` };
+  }
+  if (d.action === "PARCIAL" && r < 0.8) {
+    return { ...d, action:"MANTER", partialPercent:null, reason:`Portão de risco: ${d.reason} | Parcial bloqueada antes de 0,8R.` };
+  }
+  if (d.action === "ENCERRAR" && (r > -0.6 || d.thesisStillValid || d.confidence < 85)) {
+    return { ...d, action:"MANTER", suggestedStop:null, partialPercent:null, reason:`Portão de risco: ${d.reason} | Encerramento antecipado bloqueado sem invalidação forte.` };
+  }
+  return d;
+}
+
 export async function manageTradeWithAi(ctx: AiTradeContext): Promise<AiManagementDecision> {
   const apiKey = process.env.GROQ_API_KEY;
   const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
@@ -121,7 +135,7 @@ export async function manageTradeWithAi(ctx: AiTradeContext): Promise<AiManageme
   const action: AiManagementAction = allowed.has(parsed?.action) ? parsed.action : "MANTER";
   const suggestedStop = sanitizeStop(ctx, parsed?.suggestedStop);
   const partial = Number(parsed?.partialPercent);
-  return {
+  const decision: AiManagementDecision = {
     action,
     suggestedStop,
     partialPercent: action === "PARCIAL" && Number.isFinite(partial) ? Math.max(10, Math.min(90, partial)) : null,
@@ -133,4 +147,5 @@ export async function manageTradeWithAi(ctx: AiTradeContext): Promise<AiManageme
     provider: "groq",
     model
   };
+  return applyPolicyGate(ctx, decision);
 }
