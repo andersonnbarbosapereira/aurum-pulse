@@ -38,7 +38,7 @@ export type AiManagementDecision = {
 
 const allowed = new Set<AiManagementAction>(["MANTER","PROTEGER","BREAKEVEN","TRAILING","PARCIAL","ENCERRAR"]);
 
-function fallbackDecision(ctx: AiTradeContext): AiManagementDecision {
+function fallbackDecision(ctx: AiTradeContext, diagnostic="deterministic-fallback"): AiManagementDecision {
   const originalRisk = Math.abs(ctx.entry - ctx.originalStop) || 1;
   const favorable = ctx.side === "LONG" ? ctx.currentPrice - ctx.entry : ctx.entry - ctx.currentPrice;
   const r = favorable / originalRisk;
@@ -54,7 +54,7 @@ function fallbackDecision(ctx: AiTradeContext): AiManagementDecision {
     action = "MANTER";
     reason = "A operação está pressionada, porém ainda antes da invalidação original. O gestor determinístico não encerra sem quebra objetiva da tese.";
   }
-  return { action, suggestedStop, partialPercent, confidence: 35, reason, evidences:[`R atual aproximado: ${r.toFixed(2)}`], thesisStillValid:true, riskCanIncrease:false, provider:"fallback", model:"deterministic-fallback" };
+  return { action, suggestedStop, partialPercent, confidence: 35, reason, evidences:[`R atual aproximado: ${r.toFixed(2)}`], thesisStillValid:true, riskCanIncrease:false, provider:"fallback", model:diagnostic };
 }
 
 function sanitizeStop(ctx: AiTradeContext, proposed: unknown): number | null {
@@ -71,7 +71,7 @@ function sanitizeStop(ctx: AiTradeContext, proposed: unknown): number | null {
 export async function manageTradeWithAi(ctx: AiTradeContext): Promise<AiManagementDecision> {
   const apiKey = process.env.GROQ_API_KEY;
   const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
-  if (!apiKey) return fallbackDecision(ctx);
+  if (!apiKey) return fallbackDecision(ctx,"fallback-no-key");
 
   const system = `Você é o gestor de risco contextual do Aurum Pulse para XAUUSD. Responda sempre em português.\n\nRegras absolutas:\n1. Nunca aumente o risco original. Nunca afaste o stop para além do stop original.\n2. O stop original é a invalidação máxima e não pode ser removido.\n3. Diferencie pullback saudável de quebra de tese. Não encerre apenas porque o preço está temporariamente contra.\n4. Ações permitidas: MANTER, PROTEGER, BREAKEVEN, TRAILING, PARCIAL, ENCERRAR.\n5. Se sugerir stop, ele deve reduzir ou manter o risco, nunca ampliar.\n6. Não invente dados ausentes.\n7. Priorize estrutura, liquidez, deslocamento, BOS/CHoCH, OB/FVG e comportamento multi-timeframe informados no contexto.\n8. Quando a evidência for insuficiente, prefira MANTER em vez de antecipar uma saída por medo.`;
 
@@ -112,12 +112,12 @@ export async function manageTradeWithAi(ctx: AiTradeContext): Promise<AiManageme
     }),
     cache: "no-store"
   });
-  if (!response.ok) return fallbackDecision(ctx);
+  if (!response.ok) return fallbackDecision(ctx,`fallback-http-${response.status}`);
   const data = await response.json();
   const text = String(data?.choices?.[0]?.message?.content || "").trim();
   let parsed: any;
   try { parsed = JSON.parse(text); }
-  catch { return fallbackDecision(ctx); }
+  catch { return fallbackDecision(ctx,"fallback-parse"); }
   const action: AiManagementAction = allowed.has(parsed?.action) ? parsed.action : "MANTER";
   const suggestedStop = sanitizeStop(ctx, parsed?.suggestedStop);
   const partial = Number(parsed?.partialPercent);
