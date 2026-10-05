@@ -5,13 +5,21 @@ import { runResearch } from "@/lib/research-backtest";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+async function safeHistorical(epic:string,resolution:string,from:Date,to:Date){
+  try{return await getHistoricalPrices(epic,resolution,from,to,1000)}catch(error){
+    const m=error instanceof Error?error.message:"";
+    if(m==="CAPITAL_API_404") return [];
+    throw error;
+  }
+}
+
 async function fetchChunks(epic:string,resolution:string,start:Date,end:Date,chunkMinutes:number){
   const jobs:{from:Date;to:Date}[]=[]; const step=chunkMinutes*60_000;
   for(let t=start.getTime();t<end.getTime();t+=step) jobs.push({from:new Date(t),to:new Date(Math.min(t+step-1,end.getTime()))});
   const out:any[]=[];
   for(let i=0;i<jobs.length;i+=5){
     const batch=jobs.slice(i,i+5);
-    const parts=await Promise.all(batch.map(j=>getHistoricalPrices(epic,resolution,j.from,j.to,1000)));
+    const parts=await Promise.all(batch.map(j=>safeHistorical(epic,resolution,j.from,j.to)));
     for(const p of parts)out.push(...p);
     if(i+5<jobs.length) await new Promise(r=>setTimeout(r,550));
   }
