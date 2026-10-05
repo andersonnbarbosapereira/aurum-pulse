@@ -11,7 +11,7 @@ async function safeHistorical(epic:string,resolution:string,from:Date,to:Date){
     try{return await getHistoricalPrices(epic,resolution,from,to,1000)}catch(error){
       const m=error instanceof Error?error.message:"";
       if(m==="CAPITAL_API_404") return [];
-      if(m==="CAPITAL_API_429"&&attempt<2){await sleep(700*(attempt+1));continue;}
+      if(m==="CAPITAL_API_429"&&attempt<2){await sleep(750*(attempt+1));continue;}
       throw error;
     }
   }
@@ -20,7 +20,11 @@ async function safeHistorical(epic:string,resolution:string,from:Date,to:Date){
 
 async function runJobs(epic:string,resolution:string,jobs:{from:Date;to:Date}[]){
   const out:any[]=[];
-  for(let i=0;i<jobs.length;i+=4){const parts=await Promise.all(jobs.slice(i,i+4).map(j=>safeHistorical(epic,resolution,j.from,j.to)));for(const p of parts)out.push(...p);if(i+4<jobs.length)await sleep(650);}
+  for(let i=0;i<jobs.length;i+=4){
+    const parts=await Promise.all(jobs.slice(i,i+4).map(j=>safeHistorical(epic,resolution,j.from,j.to)));
+    for(const p of parts)out.push(...p);
+    if(i+4<jobs.length)await sleep(650);
+  }
   return dedupe(out);
 }
 
@@ -30,12 +34,15 @@ async function fetchM5(epic:string,start:Date,end:Date){
   return runJobs(epic,"MINUTE_5",jobs);
 }
 
-async function fetchM1LiquidSessions(epic:string,start:Date,end:Date){
+async function fetchM1BrazilWindow(epic:string,start:Date,end:Date){
   const jobs:{from:Date;to:Date}[]=[];
   for(let d=new Date(Date.UTC(start.getUTCFullYear(),start.getUTCMonth(),start.getUTCDate()));d<end;d=new Date(d.getTime()+86_400_000)){
     const day=d.getUTCDay();if(day===0||day===6)continue;
-    const from=new Date(d.getTime()+6*3_600_000),to=new Date(Math.min(d.getTime()+20*3_600_000-1,end.getTime()));
-    if(to>start&&from<end)jobs.push({from,to});
+    // 21:00-15:30 America/Sao_Paulo = 00:00-18:30 UTC. Split to stay below 1000 M1 bars/request.
+    const a0=new Date(d.getTime()),a1=new Date(d.getTime()+9*3_600_000+15*60_000-1);
+    const b0=new Date(d.getTime()+9*3_600_000+15*60_000),b1=new Date(Math.min(d.getTime()+18*3_600_000+30*60_000-1,end.getTime()));
+    if(a1>start&&a0<end)jobs.push({from:new Date(Math.max(a0.getTime(),start.getTime())),to:new Date(Math.min(a1.getTime(),end.getTime()))});
+    if(b1>start&&b0<end)jobs.push({from:new Date(Math.max(b0.getTime(),start.getTime())),to:b1});
   }
   return runJobs(epic,"MINUTE",jobs);
 }
@@ -47,8 +54,8 @@ export async function GET(){
     const epic=await resolveGoldEpic(),end=new Date(),start90=new Date(end.getTime()-90*86_400_000),startM1=new Date(end.getTime()-30*86_400_000);
     const m5=await fetchM5(epic,start90,end);
     await sleep(700);
-    const m1=await fetchM1LiquidSessions(epic,startM1,end);
+    const m1=await fetchM1BrazilWindow(epic,startM1,end);
     const result=runResearch(m5,m1,90,30);
-    return NextResponse.json({mode:"five-engine-research",source:"Capital.com",epic,requestedDays:90,m1Coverage:"last 30 days, weekdays 06:00-20:00 UTC (auxiliary confirmation study)",...result},{headers:{"X-Robots-Tag":"noindex"}});
+    return NextResponse.json({mode:"five-engine-research",source:"Capital.com",epic,requestedDays:90,m1Coverage:"last 30 days, weekdays 21:00-15:30 America/Sao_Paulo (00:00-18:30 UTC)",...result},{headers:{"X-Robots-Tag":"noindex"}});
   }catch(error){const diagnostic=error instanceof Error?error.message:"UNKNOWN_ERROR";return NextResponse.json({status:"unavailable",error:"Research backtest could not be completed.",diagnostic},{status:502});}
 }
