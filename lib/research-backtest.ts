@@ -27,8 +27,8 @@ const engines=[
 const tfs:TF[]=["M5","M15","H1"];
 function key(e:string,tf:TF,m1:boolean){return`${e}|${tf}|${m1?1:0}`;}
 
-export function runResearch(raw5:Raw[],raw1:Raw[],days=90){
- const m5=raw5.map(norm).filter((x):x is C=>!!x).sort((a,b)=>a.time-b.time),m1=raw1.map(norm).filter((x):x is C=>!!x).sort((a,b)=>a.time-b.time),m15=agg(m5,15),h1=agg(m5,60);
+export function runResearch(raw5:Raw[],raw1:Raw[],days=90,m1Days=30){
+ const m5=raw5.map(norm).filter((x):x is C=>!!x).sort((a,b)=>a.time-b.time),m1=raw1.map(norm).filter((x):x is C=>!!x).sort((a,b)=>a.time-b.time),m15=agg(m5,15),h1=agg(m5,60),firstM1=m1[0]?.time??Infinity;
  const states=new Map<string,State>();for(const E of engines)for(const tf of tfs)for(const u of [false,true])states.set(key(E.id,tf,u),{blocked:-1,trades:[]});
  let p15=-1,p1=-1,pm1=-1;
  for(let i=100;i<m5.length-2;i++){
@@ -43,7 +43,7 @@ export function runResearch(raw5:Raw[],raw1:Raw[],days=90){
    const common={side,h1:h1f,m15:m15f,ob:ob(a5,side,s.close)||ob(a15,side,s.close),fvg:fvg(a5,side,s.close)||fvg(a15,side,s.close),sweep:sweep(a5,side),candle:candle(a5,side),bos:bos(a5,side),session};
    const fibs:{[K in TF]:boolean}={M5:fib(a5,side,s.close),M15:fib(a15,side,s.close),H1:fib(a1,side,s.close)};
    for(const E of engines)for(const tf of tfs){const x={...common,fib:fibs[tf]};if(!E.ok(x))continue;for(const useM1 of [false,true]){
-    const st=states.get(key(E.id,tf,useM1))!;if(i<=st.blocked)continue;if(useM1&&(!session||!m1ok(aM1,side,s.time)))continue;
+    const st=states.get(key(E.id,tf,useM1))!;if(i<=st.blocked)continue;if(useM1&&(s.time<firstM1||!session||!m1ok(aM1,side,s.time)))continue;
     const en=m5[i+1].open,stop=side==="LONG"?Math.min(...a5.slice(-8).map(c=>c.low)):Math.max(...a5.slice(-8).map(c=>c.high)),risk=Math.abs(en-stop);if(risk<=0||risk/en>.008)continue;const rr=1.5,take=side==="LONG"?en+risk*rr:en-risk*rr;let r=0,ex=Math.min(i+48,m5.length-1),res="EXPIRED";
     for(let j=i+1;j<=ex;j++){const c=m5[j],sh=side==="LONG"?c.low<=stop:c.high>=stop,th=side==="LONG"?c.high>=take:c.low<=take;if(sh){r=-1;ex=j;res="SL";break}if(th){r=rr;ex=j;res="TP";break}}
     if(res==="EXPIRED"){const px=m5[ex].close;r=side==="LONG"?(px-en)/risk:(en-px)/risk;r=Math.max(-1,Math.min(rr,r));}
@@ -51,7 +51,7 @@ export function runResearch(raw5:Raw[],raw1:Raw[],days=90){
    }}
   }
  }
- const variants:any[]=[];for(const E of engines)for(const tf of tfs)for(const useM1 of [false,true])variants.push({engine:E.id,name:E.name,fibTimeframe:tf,m1Confirmation:useM1,metrics:metrics(states.get(key(E.id,tf,useM1))!.trades,days)});
+ const variants:any[]=[];for(const E of engines)for(const tf of tfs)for(const useM1 of [false,true])variants.push({engine:E.id,name:E.name,fibTimeframe:tf,m1Confirmation:useM1,coverageDays:useM1?m1Days:days,metrics:metrics(states.get(key(E.id,tf,useM1))!.trades,useM1?m1Days:days)});
  variants.sort((a,b)=>b.metrics.expectancyR-a.metrics.expectancyR||b.metrics.totalR-a.metrics.totalR);
- return{methodology:{lookahead:false,movingAverages:false,minRR:1.5,fibonacci:tfs,m1Tested:true,m1Role:"confirmation only during liquid London/New York window",engines:engines.map(e=>({id:e.id,name:e.name}))},sample:{m5Bars:m5.length,m1Bars:m1.length,from:m5[0]?new Date(m5[0].time).toISOString():null,to:m5.at(-1)?new Date(m5.at(-1)!.time).toISOString():null},variants,best:variants.slice(0,10)};
+ return{methodology:{lookahead:false,movingAverages:false,minRR:1.5,fibonacci:tfs,m1Tested:true,m1CoverageDays:m1Days,m1Role:"confirmation only during liquid London/New York window",engines:engines.map(e=>({id:e.id,name:e.name}))},sample:{m5Bars:m5.length,m1Bars:m1.length,from:m5[0]?new Date(m5[0].time).toISOString():null,to:m5.at(-1)?new Date(m5.at(-1)!.time).toISOString():null,m1From:m1[0]?new Date(m1[0].time).toISOString():null,m1To:m1.at(-1)?new Date(m1.at(-1)!.time).toISOString():null},variants,best:variants.slice(0,10)};
 }
