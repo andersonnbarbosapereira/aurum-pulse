@@ -50,7 +50,7 @@ async function m1(epic:string,start:Date,end:Date){
 
 export async function GET(req:NextRequest){
   try{
-    const offset=Math.max(0,Math.min(60,Number(req.nextUrl.searchParams.get("offset")||0))),days=30;
+    const offset=Math.max(0,Math.min(60,Number(req.nextUrl.searchParams.get("offset")||0))),days=Math.max(30,Math.min(60,Number(req.nextUrl.searchParams.get("days")||30)));
     const epic=await resolveGoldEpic(),now=new Date(),end=new Date(now.getTime()-offset*86400000),start=new Date(end.getTime()-days*86400000),warm=new Date(start.getTime()-7*86400000);
     const raw5=await m5(epic,warm,end);await sleep(450);const raw1=await m1(epic,start,end);
     return NextResponse.json({mode:"multimotor-portfolio-research",offsetDays:offset,days,lot:.01,...runMultiMotorPortfolioResearch(raw5,raw1)},{headers:{"X-Robots-Tag":"noindex"}})
