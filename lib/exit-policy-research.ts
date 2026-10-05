@@ -23,7 +23,7 @@ function structuralLockR(c:BaseCandidate,path:Bar[],i:number,minLock:number){
   return clamp(Math.max(fallback,r??0),0,Math.max(0,current-.05));
 }
 
-function simulate(c:BaseCandidate,policy:Policy){
+export function simulate(c:BaseCandidate,policy:Policy){
   if(policy==="ALVO_2R") return c.baselineR;
   let remaining=1,realized=0,stopR=-1,stage=0;
   const path=c.path as Bar[];
