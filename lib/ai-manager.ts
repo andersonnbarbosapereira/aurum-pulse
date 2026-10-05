@@ -46,10 +46,10 @@ function fallbackDecision(ctx: AiTradeContext, diagnostic="deterministic-fallbac
   let suggestedStop: number | null = null;
   let partialPercent: number | null = null;
   let reason = "A tese permanece dentro do risco originalmente definido; sem evidência suficiente para intervenção antecipada.";
-  if (r >= 1.2) {
+  if (r >= 1.5) {
     action = "PROTEGER";
     suggestedStop = ctx.entry;
-    reason = "A operação avançou mais de 1R; proteger o capital sem ampliar o risco original é razoável.";
+    reason = "A operação avançou pelo menos 1,5R; proteger o capital sem ampliar o risco original passa a ser permitido.";
   } else if (r <= -0.8) {
     action = "MANTER";
     reason = "A operação está pressionada, porém ainda antes da invalidação original. O gestor determinístico não encerra sem quebra objetiva da tese.";
@@ -70,11 +70,11 @@ function sanitizeStop(ctx: AiTradeContext, proposed: unknown): number | null {
 
 function applyPolicyGate(ctx: AiTradeContext, d: AiManagementDecision): AiManagementDecision {
   const r = ctx.unrealizedR;
-  if (["PROTEGER","BREAKEVEN","TRAILING"].includes(d.action) && r <= 0.25) {
-    return { ...d, action:"MANTER", suggestedStop:null, reason:`Portão de risco: ${d.reason} | Operação ainda não ganhou margem suficiente para proteção.` };
+  if (["PROTEGER","BREAKEVEN","TRAILING"].includes(d.action) && r < 1.5) {
+    return { ...d, action:"MANTER", suggestedStop:null, reason:`Portão de risco: ${d.reason} | Proteção bloqueada antes de 1,5R para não sufocar o movimento normal.` };
   }
-  if (d.action === "PARCIAL" && r < 0.8) {
-    return { ...d, action:"MANTER", partialPercent:null, reason:`Portão de risco: ${d.reason} | Parcial bloqueada antes de 0,8R.` };
+  if (d.action === "PARCIAL" && r < 1.5) {
+    return { ...d, action:"MANTER", partialPercent:null, reason:`Portão de risco: ${d.reason} | Parcial bloqueada antes de 1,5R.` };
   }
   if (d.action === "ENCERRAR" && (r > -0.6 || d.thesisStillValid || d.confidence < 85)) {
     return { ...d, action:"MANTER", suggestedStop:null, partialPercent:null, reason:`Portão de risco: ${d.reason} | Encerramento antecipado bloqueado sem invalidação forte.` };
@@ -87,7 +87,10 @@ export async function manageTradeWithAi(ctx: AiTradeContext): Promise<AiManageme
   const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
   if (!apiKey) return fallbackDecision(ctx,"fallback-no-key");
 
-  const system = `Você é o gestor de risco contextual do Aurum Pulse para XAUUSD. Responda sempre em português.\n\nRegras absolutas:\n1. Nunca aumente o risco original. Nunca afaste o stop para além do stop original.\n2. O stop original é a invalidação máxima e não pode ser removido.\n3. Diferencie pullback saudável de quebra de tese. Não encerre apenas porque o preço está temporariamente contra.\n4. Ações permitidas: MANTER, PROTEGER, BREAKEVEN, TRAILING, PARCIAL, ENCERRAR.\n5. Se sugerir stop, ele deve reduzir ou manter o risco, nunca ampliar.\n6. Não invente dados ausentes.\n7. Priorize estrutura, liquidez, deslocamento, BOS/CHoCH, OB/FVG e comportamento multi-timeframe informados no contexto.\n8. Quando a evidência for insuficiente, prefira MANTER em vez de antecipar uma saída por medo.`;
+  const originalRisk = Math.abs(ctx.entry - ctx.originalStop) || 1;
+  const stopDistanceR = Math.abs(ctx.currentPrice - ctx.originalStop) / originalRisk;
+  const state = ctx.unrealizedR > 0 ? "EM_GANHO" : ctx.unrealizedR < 0 ? "EM_PERDA" : "NEUTRO";
+  const system = `Você é o gestor de risco contextual do Aurum Pulse para XAUUSD. Responda sempre em português.\n\nRegras absolutas:\n1. Nunca aumente o risco original. Nunca afaste o stop para além do stop original.\n2. O stop original é a invalidação máxima e não pode ser removido.\n3. O estado e o R atual fornecidos são fatos numéricos: não os contradiga.\n4. Diferencie pullback saudável de quebra objetiva da tese. Viés contrário isoladamente não invalida a operação.\n5. Antes de +1,5R, prefira MANTER salvo invalidação estrutural forte.\n6. Ações permitidas: MANTER, PROTEGER, BREAKEVEN, TRAILING, PARCIAL, ENCERRAR.\n7. Não invente dados ausentes.\n8. Priorize estrutura, liquidez, deslocamento, BOS/CHoCH, OB/FVG e comportamento multi-timeframe informados no contexto.`;
 
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
@@ -121,7 +124,7 @@ export async function manageTradeWithAi(ctx: AiTradeContext): Promise<AiManageme
       },
       messages: [
         { role: "system", content: system },
-        { role: "user", content: JSON.stringify(ctx) }
+        { role: "user", content: JSON.stringify({ ...ctx, estado: state, rAtual: +ctx.unrealizedR.toFixed(2), distanciaStopR: +stopDistanceR.toFixed(2) }) }
       ]
     }),
     cache: "no-store"
