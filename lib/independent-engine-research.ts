@@ -2,8 +2,8 @@ import { simulate } from "@/lib/exit-policy-research";
 import type { BaseCandidate } from "@/lib/ai-management-research";
 
 type Raw=any; type Side="LONG"|"SHORT"; type C={time:number;open:number;high:number;low:number;close:number};
-type Engine="LIQUIDITY_REVERSAL"|"INSTITUTIONAL_PULLBACK"|"LIQUIDITY_CONTINUATION";
-type Diag=BaseCandidate&{features:{h1Aligned:boolean;m15Aligned:boolean;bos:boolean;disp:boolean;ob:boolean;fvg:boolean;candle:boolean;sweep:boolean;counterSweep:boolean;fib:boolean;riskPct:number}};
+export type Engine="LIQUIDITY_REVERSAL"|"INSTITUTIONAL_PULLBACK"|"LIQUIDITY_CONTINUATION";
+export type Diag=BaseCandidate&{features:{h1Aligned:boolean;m15Aligned:boolean;bos:boolean;disp:boolean;ob:boolean;fvg:boolean;candle:boolean;sweep:boolean;counterSweep:boolean;fib:boolean;riskPct:number}};
 
 function mid(v:any){const b=Number(v?.bid),a=Number(v?.ask??v?.offer);if(Number.isFinite(b)&&Number.isFinite(a))return(b+a)/2;if(Number.isFinite(b))return b;if(Number.isFinite(a))return a;return null}
 function norm(r:Raw):C|null{const open=mid(r?.openPrice),high=mid(r?.highPrice),low=mid(r?.lowPrice),close=mid(r?.closePrice),s=r?.snapshotTimeUTC??r?.snapshotTime,time=s?Date.parse(String(s).endsWith("Z")?s:`${s}Z`):NaN;if([open,high,low,close].some(x=>x===null)||!Number.isFinite(time))return null;return{time,open:open!,high:high!,low:low!,close:close!}}
@@ -38,7 +38,7 @@ function scoreEngine(engine:Engine,x:any){
   return s;
 }
 
-function build(raw5:Raw[],raw1:Raw[],engine:Engine,threshold:number){
+export function buildIndependentCandidates(raw5:Raw[],raw1:Raw[],engine:Engine,threshold:number){
   const m5=raw5.map(norm).filter((x):x is C=>!!x).sort((a,b)=>a.time-b.time),m1=raw1.map(norm).filter((x):x is C=>!!x).sort((a,b)=>a.time-b.time),m15=agg(m5,15),h1=agg(m5,60),out:Diag[]=[];
   let p15=-1,p1=-1,pm1=-1;
   for(let i=120;i<m5.length-50;i++){
@@ -91,6 +91,6 @@ function diagnose(cs:Diag[]){
 export function runIndependentEngineResearch(raw5:any[],raw1:any[]){
   const engines:Engine[]=["LIQUIDITY_REVERSAL","INSTITUTIONAL_PULLBACK","LIQUIDITY_CONTINUATION"],thresholds=[58,64,68,72];
   const results:any[]=[];
-  for(const engine of engines)for(const threshold of thresholds){const cs=build(raw5,raw1,engine,threshold);results.push({engine,threshold,...stats(cs),diagnostics:(engine!=="LIQUIDITY_REVERSAL"&&[64,68].includes(threshold))?diagnose(cs):undefined})}
+  for(const engine of engines)for(const threshold of thresholds){const cs=buildIndependentCandidates(raw5,raw1,engine,threshold);results.push({engine,threshold,...stats(cs),diagnostics:(engine!=="LIQUIDITY_REVERSAL"&&[64,68].includes(threshold))?diagnose(cs):undefined})}
   return{results};
 }
