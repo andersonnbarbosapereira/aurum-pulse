@@ -11,9 +11,7 @@ function credentials() {
   const apiKey = process.env.CAPITAL_API_KEY;
   const identifier = process.env.CAPITAL_IDENTIFIER;
   const password = process.env.CAPITAL_API_PASSWORD;
-  if (!apiKey || !identifier || !password) {
-    throw new Error("CAPITAL_CREDENTIALS_MISSING");
-  }
+  if (!apiKey || !identifier || !password) throw new Error("CAPITAL_CREDENTIALS_MISSING");
   return { apiKey, identifier, password };
 }
 
@@ -45,7 +43,7 @@ async function api(path: string) {
   return response.json();
 }
 
-async function resolveGoldEpic(): Promise<string> {
+export async function resolveGoldEpic(): Promise<string> {
   if (process.env.CAPITAL_EPIC) return process.env.CAPITAL_EPIC;
   const data = await api("/markets?searchTerm=gold");
   const markets = Array.isArray(data?.markets) ? data.markets : [];
@@ -71,6 +69,18 @@ function lowOf(candle: any): number | null { return middle(candle?.lowPrice); }
 
 async function prices(epic: string, resolution: string, max = 120) {
   const data = await api(`/prices/${encodeURIComponent(epic)}?resolution=${resolution}&max=${max}`);
+  return Array.isArray(data?.prices) ? data.prices : [];
+}
+
+export async function getHistoricalPrices(epic: string, resolution: string, from: Date, to: Date, max = 1000) {
+  const fmt = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "");
+  const query = new URLSearchParams({
+    resolution,
+    max: String(Math.min(1000, Math.max(1, max))),
+    from: fmt(from),
+    to: fmt(to)
+  });
+  const data = await api(`/prices/${encodeURIComponent(epic)}?${query.toString()}`);
   return Array.isArray(data?.prices) ? data.prices : [];
 }
 
@@ -123,7 +133,7 @@ export async function getLiveSnapshot(): Promise<MarketSnapshot & { source: stri
   const risk = Math.max(Math.abs(((zone[0] + zone[1]) / 2) - stop), volatility * 0.5);
   const target1 = Number((price + direction * risk * 1.5).toFixed(2));
   const target2 = Number((price + direction * risk * 2.2).toFixed(2));
-  const rr = Number((2.2).toFixed(2));
+  const rr = 2.2;
 
   const structure = bias === "LONG"
     ? "M15, H1 e H4 estão alinhados para cima. O sistema procura compra apenas com preço e risco favoráveis."
