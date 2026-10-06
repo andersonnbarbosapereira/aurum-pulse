@@ -5,7 +5,7 @@ import { callShadowWrite } from "@/lib/shadow-recorder";
 
 type OpenTrade={
   id:string; signal_key:string; signal_time:string; side:"LONG"|"SHORT"; signal_class:string;
-  engines:string[]; score:number|string; entry:number|string; original_stop:number|string; current_stop:number|string|null;
+  engines:string[]; score:number|string; entry:number|string; original_stop:number|string; current_stop:number|string|null; current_stop_at:string|null;
   target_2r:number|string; target_3r:number|string; risk_points:number|string; estimated_risk_usd_001:number|string;
   thesis:string[]; status:"OPEN"|"TP2"; current_price:number|string|null; mfe_r:number|string|null; mae_r:number|string|null;
   partial_2r_at:string|null; target_3r_at:string|null; stop_hit_at:string|null;
@@ -80,8 +80,10 @@ export async function monitorOpenTrades(snapshot:LiveFinalSnapshot){
 
     const entrySeen=observedAt;
     const managementStart=status==="TP2"&&partialAt?Math.max(entrySeen,Date.parse(partialAt)):entrySeen;
+    const tightenedAt=t.current_stop_at?Date.parse(t.current_stop_at):Infinity;
     for(const c of candles.filter((x:Minute)=>x.time>=managementStart)){
-      const stop=hitStop(t,c,currentStop);
+      const stopLevel=c.time>=tightenedAt?currentStop:origStop;
+      const stop=hitStop(t,c,stopLevel);
       const hit2=!partialAt&&hitTarget(t,c,Number(t.target_2r));
       const hit3=hitTarget(t,c,Number(t.target_3r));
 
@@ -105,11 +107,11 @@ export async function monitorOpenTrades(snapshot:LiveFinalSnapshot){
       }else if(status==="TP2"){
         if(stop && hit3){
           stopAt=new Date(c.time).toISOString(); status="CLOSED"; event="STOP_APOS_TP2";
-          realizedR=0.6 + 0.7*rAt(t,currentStop); realizedUsd=Number(t.estimated_risk_usd_001)*realizedR; closedAt=stopAt; break;
+          realizedR=0.6 + 0.7*rAt(t,stopLevel); realizedUsd=Number(t.estimated_risk_usd_001)*realizedR; closedAt=stopAt; break;
         }
         if(stop){
           stopAt=new Date(c.time).toISOString(); status="CLOSED"; event="STOP_APOS_TP2";
-          realizedR=0.6 + 0.7*rAt(t,currentStop); realizedUsd=Number(t.estimated_risk_usd_001)*realizedR; closedAt=stopAt; break;
+          realizedR=0.6 + 0.7*rAt(t,stopLevel); realizedUsd=Number(t.estimated_risk_usd_001)*realizedR; closedAt=stopAt; break;
         }
         if(hit3){
           targetAt=new Date(c.time).toISOString(); status="TP3"; event="TP3";
@@ -120,30 +122,38 @@ export async function monitorOpenTrades(snapshot:LiveFinalSnapshot){
 
     const currentR=rAt(t,snapshot.price);
     let ai:any=null;
-    if(status==="OPEN"||status==="TP2"){
+    let currentStopAt=t.current_stop_at;
+    if((status==="OPEN"||status==="TP2")&&!event){
       const ctx:AiTradeContext={
         symbol:"XAUUSD",side:t.side,entry,originalStop:origStop,currentStop,
         target1:Number(t.target_2r),target2:Number(t.target_3r),currentPrice:snapshot.price,lot:0.01,
         unrealizedR:currentR,mfeR:mfe,maeR:mae,
+        managementStage:status==="TP2"?"RUNNER_70":"PRE_2R",
+        partial2RDone:status==="TP2"||!!partialAt,
         setupName:Array.isArray(t.engines)?t.engines.join(" + "):"FINAL_V1",
         reasons:Array.isArray(t.thesis)?t.thesis:[],
         market:{bias:snapshot.bias,regime:snapshot.regime,structure:snapshot.structure,factors:snapshot.factors}
       };
       ai=await manageTradeWithAi(ctx);
       if(ai.suggestedStop!=null){
-        currentStop=t.side==="LONG"?Math.max(currentStop,ai.suggestedStop):Math.min(currentStop,ai.suggestedStop);
+        const nextStop=t.side==="LONG"?Math.max(currentStop,ai.suggestedStop):Math.min(currentStop,ai.suggestedStop);
+        if(Math.abs(nextStop-currentStop)>0.0001){
+          currentStop=nextStop;
+          currentStopAt=new Date().toISOString();
+        }
       }
     }
 
     const now=new Date().toISOString();
     await updateShadowTrade(t.id,{
-      status,current_price:snapshot.price,current_stop:currentStop,mfe_r:+mfe.toFixed(3),mae_r:+mae.toFixed(3),
+      status,current_price:snapshot.price,current_stop:currentStop,current_stop_at:currentStopAt,mfe_r:+mfe.toFixed(3),mae_r:+mae.toFixed(3),
       realized_r:realizedR,realized_usd:realizedUsd,ai_state:ai,
       partial_2r_at:partialAt,target_3r_at:targetAt,stop_hit_at:stopAt,
       last_ai_action:ai?.action??t.last_ai_action,last_ai_message:ai?.reason??t.last_ai_message,last_ai_at:ai?now:t.last_ai_at,
       closed_at:closedAt
     });
-    results.push({id:t.id,status,event,currentPrice:snapshot.price,currentR:+currentR.toFixed(3),mfeR:+mfe.toFixed(3),maeR:+mae.toFixed(3),currentStop,ai,previousAiAction:t.last_ai_action,lastTelegramEvent:t.last_telegram_event});
+    const deterministicAction=event==="TP2"?"PARTIAL_2R_30":event==="TP3"?"CLOSE_RUNNER_3R":event==="STOP"?"STOP_FULL":event==="STOP_APOS_TP2"?"STOP_RUNNER_70":null;
+    results.push({id:t.id,status,event,deterministicAction,currentPrice:snapshot.price,currentR:+currentR.toFixed(3),mfeR:+mfe.toFixed(3),maeR:+mae.toFixed(3),currentStop,currentStopAt,ai,previousAiAction:t.last_ai_action,lastTelegramEvent:t.last_telegram_event});
   }
   return results;
 }
