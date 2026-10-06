@@ -100,6 +100,26 @@ function atrLike(candles: any[]) {
   return ranges.length ? ranges.reduce((a,b)=>a+b,0) / ranges.length : 0;
 }
 
+export async function getLiveQuote() {
+  const epic = await resolveGoldEpic();
+  const marketData = await api(`/markets/${encodeURIComponent(epic)}`);
+  const snapshot = marketData?.snapshot || marketData;
+  const bid = Number(snapshot?.bid);
+  const offer = Number(snapshot?.offer ?? snapshot?.ask);
+  const price = Number.isFinite(bid) && Number.isFinite(offer) ? (bid + offer) / 2 : Number.isFinite(bid) ? bid : offer;
+  if (!Number.isFinite(price)) throw new Error("CAPITAL_PRICE_UNAVAILABLE");
+  return {
+    symbol: "XAUUSD",
+    epic,
+    price: Number(price.toFixed(2)),
+    bid: Number.isFinite(bid) ? Number(bid.toFixed(2)) : null,
+    ask: Number.isFinite(offer) ? Number(offer.toFixed(2)) : null,
+    changePercent: Number(snapshot?.percentageChange ?? 0),
+    marketStatus: snapshot?.marketStatus,
+    updatedAt: new Date().toISOString()
+  };
+}
+
 export async function getLiveSnapshot(): Promise<MarketSnapshot & { source: string; epic: string; marketStatus?: string }> {
   const epic = await resolveGoldEpic();
   const [marketData, m15, h1, h4] = await Promise.all([
