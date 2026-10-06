@@ -3,6 +3,7 @@ import type { MarketSnapshot } from "@/lib/market";
 import { getShadowDashboard } from "@/lib/shadow-recorder";
 import LivePrice from "@/app/live-price";
 import PreparationPanel from "@/app/preparation-panel";
+import DecisionIntelligence from "@/app/decision-intelligence";
 
 export const dynamic="force-dynamic";
 
@@ -98,6 +99,15 @@ export default async function Home(){
     ...market.marketMap.support.map((x:any)=>({kind:"SUPORTE",price:x.price,strength:x.strength,score:x.score,touches:x.touches,lastTouch:x.lastTouch}))
   ].sort((a:any,b:any)=>b.price-a.price);
   const recentTrades=trades.slice(0,10);
+  const engineIds=["LIQUIDITY_REVERSAL","INSTITUTIONAL_PULLBACK","LIQUIDITY_CONTINUATION"];
+  const engineBoard=engineIds.map(id=>{
+    const assoc=trades.filter((t:any)=>Array.isArray(t.engines)&&t.engines.includes(id));
+    const done=assoc.filter((t:any)=>t.realized_r!=null);
+    const wins=done.filter((t:any)=>n(t.realized_r)>0).length;
+    const sumR=done.reduce((s:number,t:any)=>s+n(t.realized_r),0);
+    const last5=[...done].sort((a:any,b:any)=>new Date(b.closed_at??b.last_seen_at).getTime()-new Date(a.closed_at??a.last_seen_at).getTime()).slice(0,5).reduce((s:number,t:any)=>s+n(t.realized_r),0);
+    return{id,n:assoc.length,closed:done.length,winRate:done.length?wins/done.length*100:0,sumR,last5};
+  });
 
   return <main className="shell">
     <header className="topbar">
@@ -147,6 +157,8 @@ export default async function Home(){
 
     <section className="section-headline"><div><span className="section-kicker">PREPARAÇÃO M5</span><h2>Como o mercado está se aproximando de um setup</h2></div><span className="muted">Informativo · não altera o FINAL_V1</span></section>
     <PreparationPanel initial={market.preparation} />
+
+<DecisionIntelligence market={{price:market.price,bias:market.bias,structure:market.structure,dna:market.dna,preparation:market.preparation}} />
 
     <section className="section-headline"><div><span className="section-kicker">MOTORES</span><h2>O que está sustentando — ou bloqueando — uma entrada</h2></div><span className="muted">Atualização estrutural no ciclo do motor</span></section>
     <section className="engine-grid">
@@ -307,6 +319,22 @@ export default async function Home(){
       <article className="stat-card"><small>Resultado acumulado</small><strong className={totalR>=0?"positive-text":"negative-text"}>{rfmt(totalR)}</strong><span>{money(totalUsd)} bruto simplificado</span></article>
       <article className="stat-card"><small>Taxa de acerto</small><strong>{closed.length?winRate.toFixed(1)+"%":"—"}</strong><span>{closed.length?String(wins)+" positivos de "+String(closed.length):"amostra ainda vazia"}</span></article>
       <article className="stat-card"><small>Drawdown forward</small><strong>{closed.length?maxDd.toFixed(2)+"R":"—"}</strong><span>somente LIVE_V2</span></article>
+    </section>
+
+    <section className="section-headline"><div><span className="section-kicker">PLACAR LIVE_V2</span><h2>Desempenho observado por motor</h2></div><span className="muted">Não pausa nem altera o FINAL_V1</span></section>
+    <section className="card engine-board-card">
+      <div className="engine-board-head"><span>Motor</span><span>Sinais</span><span>Encerrados</span><span>Acerto</span><span>Resultado</span><span>Últimos 5</span></div>
+      {engineBoard.map((r)=>(
+        <div className="engine-board-row" key={r.id}>
+          <strong>{engineName(r.id)}</strong>
+          <span>{r.n}</span>
+          <span>{r.closed}</span>
+          <span>{r.closed?r.winRate.toFixed(1)+"%":"—"}</span>
+          <span className={r.sumR>0?"positive-text":r.sumR<0?"negative-text":""}>{r.closed?rfmt(r.sumR):"—"}</span>
+          <span className={r.last5>0?"positive-text":r.last5<0?"negative-text":""}>{r.closed?rfmt(r.last5):"—"}</span>
+        </div>
+      ))}
+      <p className="board-note">Trades com concordância de mais de um motor aparecem associados a cada motor participante. O placar é diagnóstico e não interfere no envio de sinais.</p>
     </section>
 
     <section className="section-headline"><div><span className="section-kicker">HISTÓRICO</span><h2>Últimos sinais LIVE_V2</h2></div><span className="muted">Clique para abrir cada operação</span></section>
