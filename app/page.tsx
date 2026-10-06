@@ -1,4 +1,4 @@
-import { getLiveSnapshot } from "@/lib/capital";
+import { getLiveFinalSnapshot } from "@/lib/live-final-engine";
 import type { MarketSnapshot } from "@/lib/market";
 
 export const dynamic = "force-dynamic";
@@ -26,10 +26,10 @@ function biasTone(bias: MarketSnapshot["bias"]): "good" | "warn" {
 }
 
 export default async function Home() {
-  let market: Awaited<ReturnType<typeof getLiveSnapshot>> | null = null;
+  let market: Awaited<ReturnType<typeof getLiveFinalSnapshot>> | null = null;
   let connectionError = false;
   try {
-    market = await getLiveSnapshot();
+    market = await getLiveFinalSnapshot();
   } catch {
     connectionError = true;
   }
