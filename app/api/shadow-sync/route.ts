@@ -49,7 +49,8 @@ async function sync(req:NextRequest){
       shadowStorage:health?.ok===true?"ready":"unknown",
       telegramChat:chat.chatId?"bound":"waiting_start",
       telegram,
-      monitored:monitored.map((m:any)=>({id:m.id,status:m.status,event:m.event,currentR:m.currentR,mfeR:m.mfeR,maeR:m.maeR,aiAction:m.ai?.action??null})),
+      managementPolicy:"MGMT_V1",
+      monitored:monitored.map((m:any)=>({id:m.id,status:m.status,event:m.event,deterministicAction:m.deterministicAction,currentR:m.currentR,mfeR:m.mfeR,maeR:m.maeR,currentStop:m.currentStop,aiAction:m.ai?.action??null})),
       managementAlerts,
       ...write
     },{headers:{"X-Robots-Tag":"noindex"}});
