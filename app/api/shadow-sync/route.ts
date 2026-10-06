@@ -5,7 +5,7 @@ import { recordShadowSignal,shadowHealth } from "@/lib/shadow-recorder";
 export const dynamic="force-dynamic";
 export const maxDuration=60;
 
-export async function GET(req:NextRequest){
+async function sync(req:NextRequest){
   const expected=process.env.CRON_SECRET;
   const auth=req.headers.get("authorization");
   if(!expected||auth!=="Bearer "+expected)return NextResponse.json({error:"unauthorized"},{status:401});
@@ -26,3 +26,6 @@ export async function GET(req:NextRequest){
     return NextResponse.json({ok:false,error:"shadow_sync_failed",diagnostic:error instanceof Error?error.message:"UNKNOWN_ERROR"},{status:502});
   }
 }
+
+export const GET=sync;
+export const POST=sync;
