@@ -13,8 +13,6 @@ export async function ensureTelegramChat(){
   const bound=await getBoundTelegramChat();
   if(bound?.chat?.chat_id)return{chatId:Number(bound.chat.chat_id),boundNow:false};
   const updates=await tg("getUpdates");
-  const texts=updates.slice(-10).map((u:any)=>String(u?.message?.text||"").trim()).filter(Boolean);
-  console.info("[telegram-bind]",{updates:updates.length,texts:texts.map((t:string)=>t.toLowerCase()==="/start"?"/start":"<outro>")});
   const start=[...updates].reverse().find((u:any)=>String(u?.message?.text||"").trim().toLowerCase()==="/start"&&u?.message?.chat?.id);
   if(!start)return{chatId:null,boundNow:false};
   const chat=start.message.chat;
