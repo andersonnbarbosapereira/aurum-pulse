@@ -60,12 +60,12 @@ export async function monitorOpenTrades(snapshot:LiveFinalSnapshot){
   for(const t of trades){
     const from=new Date(Math.max(Date.parse(t.signal_time)-60_000,Date.now()-48*3600_000));
     const raw=await getHistoricalPrices(snapshot.epic,"MINUTE",from,new Date(),1000);
-    const candles=raw.map(norm).filter((x):x is Minute=>!!x).filter(c=>c.time>=Date.parse(t.signal_time));
+    const candles=raw.map((x:any)=>norm(x)).filter((x:Minute|null):x is Minute=>!!x).filter((c:Minute)=>c.time>=Date.parse(t.signal_time));
     const entry=Number(t.entry),origStop=Number(t.original_stop),risk=Math.abs(entry-origStop)||1;
     let currentStop=Number(t.current_stop??origStop);
     let mfe=Number(t.mfe_r??0),mae=Number(t.mae_r??0);
     let partialAt=t.partial_2r_at,targetAt=t.target_3r_at,stopAt=t.stop_hit_at;
-    let status=t.status;
+    let status:"OPEN"|"TP2"|"TP3"|"STOP"|"CLOSED"=t.status;
     let closedAt:string|null=null;
     let realizedR:number|null=null;
     let realizedUsd:number|null=null;
