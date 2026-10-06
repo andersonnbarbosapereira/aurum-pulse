@@ -60,7 +60,8 @@ export async function monitorOpenTrades(snapshot:LiveFinalSnapshot){
   for(const t of trades){
     const from=new Date(Math.max(Date.parse(t.signal_time)-60_000,Date.now()-48*3600_000));
     const raw=await getHistoricalPrices(snapshot.epic,"MINUTE",from,new Date(),1000);
-    const candles=raw.map((x:any)=>norm(x)).filter((x:Minute|null):x is Minute=>!!x).filter((c:Minute)=>c.time>=Date.parse(t.signal_time));
+    const observedAt=Date.parse(t.first_seen_at||t.signal_time);
+    const candles=raw.map((x:any)=>norm(x)).filter((x:Minute|null):x is Minute=>!!x).filter((c:Minute)=>c.time>=observedAt);
     const entry=Number(t.entry),origStop=Number(t.original_stop),risk=Math.abs(entry-origStop)||1;
     let currentStop=Number(t.current_stop??origStop);
     let mfe=Number(t.mfe_r??0),mae=Number(t.mae_r??0);
@@ -76,7 +77,7 @@ export async function monitorOpenTrades(snapshot:LiveFinalSnapshot){
       mae=Math.min(mae,adverseR(t,c));
     }
 
-    const entrySeen=Date.parse((t as any).first_seen_at||t.signal_time);
+    const entrySeen=observedAt;
     const managementStart=status==="TP2"&&partialAt?Math.max(entrySeen,Date.parse(partialAt)):entrySeen;
     for(const c of candles.filter((x:Minute)=>x.time>=managementStart)){
       const stop=hitStop(t,c,currentStop);
