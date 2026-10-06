@@ -17,7 +17,7 @@ function biasTone(bias:MarketSnapshot["bias"]):"good"|"warn"{return bias==="WAIT
 function n(v:any){const x=Number(v);return Number.isFinite(x)?x:0;}
 function px(v:any){const x=Number(v);return Number.isFinite(x)?x.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}):"—";}
 function rfmt(v:any){const x=Number(v);return Number.isFinite(x)?(x>=0?"+":"")+x.toFixed(2)+"R":"—";}
-function money(v:any){const x=Number(v);return Number.isFinite(x)?x.toLocaleString("en-US",{style:"currency",currency:"USD"}):"—";}
+function money(v:any){const x=Number(v);return Number.isFinite(x)?"US$ "+x.toFixed(2):"—";}
 function time(v:any){const d=new Date(v);return Number.isNaN(d.getTime())?"—":d.toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});}
 function engineName(e:string){
   if(e==="LIQUIDITY_REVERSAL")return"Reversão de Liquidez";
