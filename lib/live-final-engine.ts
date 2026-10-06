@@ -43,6 +43,12 @@ export type LiveFinalSnapshot = MarketSnapshot & {
   engineVersion: "FINAL_V1";
   finalGate: string;
   activeEngines: Array<{ engine: Engine; score: number; side: "LONG" | "SHORT"; accepted: boolean; reason: string }>;
+  marketMap: {
+    support: Array<{price:number;strength:"MÉDIO"|"FORTE";score:number;touches:number;distancePct:number;lastTouch:string}>;
+    resistance: Array<{price:number;strength:"MÉDIO"|"FORTE";score:number;touches:number;distancePct:number;lastTouch:string}>;
+    interestZones: Array<{type:"DEMANDA"|"OFERTA";low:number;high:number;center:number;strength:"MÉDIO"|"FORTE";score:number;distancePct:number;reason:string}>;
+    volatility: {avgM5Range:number;zoneWidth:number};
+  };
   dna: TradeThesisDna | null;
   execution: "MANUAL_ONLY";
 };
@@ -88,6 +94,69 @@ function mergeCurrent(candidates:Array<{engine:Engine;c:Diag}>){
   return groups;
 }
 
+type MapCandle={time:number;high:number;low:number;close:number};
+function mapMid(v:any){
+  const bid=Number(v?.bid),ask=Number(v?.ask??v?.offer);
+  if(Number.isFinite(bid)&&Number.isFinite(ask))return(bid+ask)/2;
+  if(Number.isFinite(bid))return bid;
+  if(Number.isFinite(ask))return ask;
+  return NaN;
+}
+function mapCandle(raw:any):MapCandle|null{
+  const time=Date.parse(raw?.snapshotTimeUTC||raw?.snapshotTime||raw?.time||"");
+  const high=mapMid(raw?.highPrice),low=mapMid(raw?.lowPrice),close=mapMid(raw?.closePrice);
+  return Number.isFinite(time)&&Number.isFinite(high)&&Number.isFinite(low)&&Number.isFinite(close)?{time,high,low,close}:null;
+}
+function buildMarketMap(raw:any[],price:number){
+  const candles=raw.map(mapCandle).filter((x):x is MapCandle=>!!x).slice(-360);
+  const ranges=candles.slice(-60).map(c=>c.high-c.low).filter(x=>x>0);
+  const avgRange=ranges.length?ranges.reduce((a,b)=>a+b,0)/ranges.length:price*.001;
+  const tolerance=Math.max(price*.00045,avgRange*.35);
+  const pivots:Array<{price:number;time:number;kind:"H"|"L"}>=[];
+  for(let i=2;i<candles.length-2;i++){
+    const c=candles[i];
+    const hi=c.high>=candles[i-1].high&&c.high>=candles[i-2].high&&c.high>=candles[i+1].high&&c.high>=candles[i+2].high;
+    const lo=c.low<=candles[i-1].low&&c.low<=candles[i-2].low&&c.low<=candles[i+1].low&&c.low<=candles[i+2].low;
+    if(hi)pivots.push({price:c.high,time:c.time,kind:"H"});
+    if(lo)pivots.push({price:c.low,time:c.time,kind:"L"});
+  }
+  const clusters:Array<{price:number;times:number[];kinds:Set<string>}>=[];
+  for(const p of pivots){
+    const found=clusters.find(x=>Math.abs(x.price-p.price)<=tolerance);
+    if(found){
+      const n=found.times.length;
+      found.price=(found.price*n+p.price)/(n+1);
+      found.times.push(p.time);found.kinds.add(p.kind);
+    }else clusters.push({price:p.price,times:[p.time],kinds:new Set([p.kind])});
+  }
+  const now=Date.now();
+  const scored=clusters.map(x=>{
+    const last=Math.max(...x.times);
+    const ageH=Math.max(0,(now-last)/3600000);
+    const recency=Math.max(0,30-Math.min(30,ageH*.7));
+    const touches=x.times.length;
+    const mixed=x.kinds.size>1?8:0;
+    const score=Math.min(100,Math.round(touches*18+recency+mixed));
+    const strength: "MÉDIO"|"FORTE"|null = score>=65?"FORTE":score>=40?"MÉDIO":null;
+    return {price:x.price,score,strength,touches,lastTouch:new Date(last).toISOString(),distancePct:Math.abs(x.price-price)/price*100};
+  }).filter(x=>x.strength!==null);
+  const support=scored.filter(x=>x.price<price).sort((a,b)=>a.distancePct-b.distancePct).slice(0,3) as Array<{price:number;score:number;strength:"MÉDIO"|"FORTE";touches:number;lastTouch:string;distancePct:number}>;
+  const resistance=scored.filter(x=>x.price>price).sort((a,b)=>a.distancePct-b.distancePct).slice(0,3) as Array<{price:number;score:number;strength:"MÉDIO"|"FORTE";touches:number;lastTouch:string;distancePct:number}>;
+  const zoneWidth=Math.max(tolerance*.75,avgRange*.22);
+  const chosen=[...support.slice(0,2).map(x=>({...x,type:"DEMANDA" as const})),...resistance.slice(0,2).map(x=>({...x,type:"OFERTA" as const}))];
+  const interestZones=chosen.map(x=>({
+    type:x.type,low:+(x.price-zoneWidth).toFixed(2),high:+(x.price+zoneWidth).toFixed(2),center:+x.price.toFixed(2),
+    strength:x.strength,score:x.score,distancePct:+x.distancePct.toFixed(3),
+    reason:`${x.touches} testes de swing · último toque ${Math.max(0,((now-Date.parse(x.lastTouch))/3600000)).toFixed(1)}h atrás`
+  })).sort((a,b)=>a.distancePct-b.distancePct);
+  return {
+    support:support.map(x=>({...x,price:+x.price.toFixed(2),distancePct:+x.distancePct.toFixed(3)})),
+    resistance:resistance.map(x=>({...x,price:+x.price.toFixed(2),distancePct:+x.distancePct.toFixed(3)})),
+    interestZones,
+    volatility:{avgM5Range:+avgRange.toFixed(2),zoneWidth:+zoneWidth.toFixed(2)}
+  };
+}
+
 export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
   const epic=await resolveGoldEpic();
   const now=new Date();
@@ -104,6 +173,7 @@ export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
     {engine:"INSTITUTIONAL_PULLBACK",threshold:64},
     {engine:"LIQUIDITY_CONTINUATION",threshold:64}
   ];
+  const marketMap=buildMarketMap(raw5,quote.price);
   const evaluated=specs.map(s=>({s,c:evaluateLatestIndependentSignal(raw5,raw1,s.engine,s.threshold,now.getTime())}));
   const acceptedBase=evaluated.filter((x):x is {s:{engine:Engine;threshold:number};c:Diag}=>!!x.c&&eligible(x.s.engine,x.c));
   const merged=mergeCurrent(acceptedBase.map(x=>({engine:x.s.engine,c:x.c})));
@@ -129,7 +199,7 @@ export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
       setup:{entryZone:[quote.price,quote.price],stop:quote.price,target1:quote.price,target2:quote.price,rr:0},
       factors:activeEngines.map(x=>({label:engineLabels[x.engine],score:x.score,note:x.reason})),
       updatedAt:new Date().toISOString(),source:"Capital.com",epic,marketStatus:quote.marketStatus,
-      engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%; timing ao vivo ≤ 0,25R",activeEngines,dna:null,execution:"MANUAL_ONLY"
+      engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%; timing ao vivo ≤ 0,25R",activeEngines,marketMap,dna:null,execution:"MANUAL_ONLY"
     };
   }
 
@@ -150,7 +220,7 @@ export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
       setup:{entryZone:[quote.price,quote.price],stop:selected.stop,target1:quote.price,target2:quote.price,rr:0},
       factors:activeEngines.map(x=>({label:engineLabels[x.engine],score:x.score,note:x.reason})),
       updatedAt:new Date().toISOString(),source:"Capital.com",epic,marketStatus:quote.marketStatus,
-      engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%; timing ao vivo ≤ 0,25R",activeEngines,dna:null,execution:"MANUAL_ONLY"
+      engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%; timing ao vivo ≤ 0,25R",activeEngines,marketMap,dna:null,execution:"MANUAL_ONLY"
     };
   }
 
@@ -175,6 +245,6 @@ export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
     setup:{entryZone:[+selected.entry.toFixed(2),+selected.entry.toFixed(2)],stop:+selected.stop.toFixed(2),target1:+t2.toFixed(2),target2:+t3.toFixed(2),rr:3},
     factors:activeEngines.map(x=>({label:engineLabels[x.engine],score:x.score,note:x.reason})),
     updatedAt:new Date().toISOString(),source:"Capital.com",epic,marketStatus:quote.marketStatus,
-    engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%",activeEngines,dna,execution:"MANUAL_ONLY"
+    engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%",activeEngines,marketMap,dna,execution:"MANUAL_ONLY"
   };
 }
