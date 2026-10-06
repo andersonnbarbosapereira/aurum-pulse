@@ -40,7 +40,7 @@ export default function AutoRefresh(){
     };
   },[router]);
 
-  return <div className="auto-refresh" title="O painel principal atualiza automaticamente a cada minuto.">
+  return <div className="auto-refresh" title="Painel principal em atualização automática: estado geral a cada minuto.">
     <i className={busy?"refresh-dot refreshing":"refresh-dot"} />
     <span>{busy?"Atualizando painel…":"Auto atualização 1 min"}</span>
     <small>{last.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</small>
