@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { getLiveSnapshot } from "@/lib/capital";
+import { getLiveFinalSnapshot } from "@/lib/live-final-engine";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const data = await getLiveSnapshot();
+    const data = await getLiveFinalSnapshot();
     return NextResponse.json({ mode: "live", source: "Capital.com", data });
   } catch (error) {
     const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
