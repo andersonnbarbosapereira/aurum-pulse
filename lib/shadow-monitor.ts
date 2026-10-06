@@ -11,6 +11,7 @@ type OpenTrade={
   partial_2r_at:string|null; target_3r_at:string|null; stop_hit_at:string|null;
   last_ai_action:string|null; last_ai_message:string|null; last_ai_at:string|null;
   last_telegram_event:string|null; last_telegram_at:string|null;
+  first_seen_at:string; observed_at?:string|null;
 };
 
 type Minute={time:number;high:number;low:number;close:number};
@@ -60,7 +61,7 @@ export async function monitorOpenTrades(snapshot:LiveFinalSnapshot){
   for(const t of trades){
     const from=new Date(Math.max(Date.parse(t.signal_time)-60_000,Date.now()-48*3600_000));
     const raw=await getHistoricalPrices(snapshot.epic,"MINUTE",from,new Date(),1000);
-    const observedAt=Date.parse(t.first_seen_at||t.signal_time);
+    const observedAt=Date.parse(t.observed_at||t.first_seen_at||t.signal_time);
     const candles=raw.map((x:any)=>norm(x)).filter((x:Minute|null):x is Minute=>!!x).filter((c:Minute)=>c.time>=observedAt);
     const entry=Number(t.entry),origStop=Number(t.original_stop),risk=Math.abs(entry-origStop)||1;
     let currentStop=Number(t.current_stop??origStop);
