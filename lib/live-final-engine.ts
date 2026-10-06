@@ -1,6 +1,6 @@
 import type { MarketSnapshot } from "@/lib/market";
 import { getHistoricalPrices, getLiveQuote, resolveGoldEpic } from "@/lib/capital";
-import { evaluateLatestIndependentSignal, type Diag, type Engine } from "@/lib/independent-engine-research";
+import { evaluateLatestIndependentSignal, evaluateLatestEngineReadiness, type EngineReadinessState, type Diag, type Engine } from "@/lib/independent-engine-research";
 
 type Tagged = Diag & { engines: Engine[] };
 
@@ -48,6 +48,17 @@ export type LiveFinalSnapshot = MarketSnapshot & {
     resistance: Array<{price:number;strength:"MÉDIO"|"FORTE";score:number;touches:number;distancePct:number;lastTouch:string}>;
     interestZones: Array<{type:"DEMANDA"|"OFERTA";low:number;high:number;center:number;strength:"MÉDIO"|"FORTE";score:number;distancePct:number;reason:string}>;
     volatility: {avgM5Range:number;zoneWidth:number};
+  };
+  preparation: {
+    overall:number;
+    direction:"LONG"|"SHORT"|"NEUTRAL";
+    updatedAt:string;
+    engines:Array<{
+      engine:Engine;side:"LONG"|"SHORT";preparation:number;rawScore:number;threshold:number;m1Confirmed:boolean;mandatoryOk:boolean;riskPct:number;
+      factors:Array<{key:string;label:string;active:boolean;weight:number}>;
+      missing:string[];
+    }>;
+    history:Array<{time:string;overall:number;direction:"LONG"|"SHORT"|"NEUTRAL"}>;
   };
   dna: TradeThesisDna | null;
   execution: "MANUAL_ONLY";
@@ -107,6 +118,37 @@ function mapCandle(raw:any):MapCandle|null{
   const high=mapMid(raw?.highPrice),low=mapMid(raw?.lowPrice),close=mapMid(raw?.closePrice);
   return Number.isFinite(time)&&Number.isFinite(high)&&Number.isFinite(low)&&Number.isFinite(close)?{time,high,low,close}:null;
 }
+function readinessPct(x:EngineReadinessState|null){
+  if(!x)return 0;
+  let pct=Math.round(Math.min(100,(x.rawScore/Math.max(1,x.threshold))*85+(x.m1Confirmed?15:0)));
+  if(!x.mandatoryOk)pct=Math.min(pct,78);
+  if(x.riskPct>.0035)pct=Math.min(pct,88);
+  return Math.max(0,pct);
+}
+function buildPreparation(raw5:any[],raw1:any[],specs:Array<{engine:Engine;threshold:number}>,nowMs:number){
+  const engines=specs.map(s=>{
+    const r=evaluateLatestEngineReadiness(raw5,raw1,s.engine,s.threshold,nowMs);
+    return r?{...r,preparation:readinessPct(r)}:null;
+  }).filter((x):x is EngineReadinessState&{preparation:number}=>!!x);
+  const best=[...engines].sort((a,b)=>b.preparation-a.preparation)[0]||null;
+  const closed=raw5.map(mapCandle).filter((x):x is MapCandle=>!!x).filter(x=>x.time<=nowMs-300000).sort((a,b)=>a.time-b.time);
+  const points=closed.slice(-6).map(c=>{
+    const cutoff=c.time+300000;
+    const rows=specs.map(s=>evaluateLatestEngineReadiness(raw5,raw1,s.engine,s.threshold,cutoff))
+      .filter((x):x is EngineReadinessState=>!!x)
+      .map(x=>({...x,preparation:readinessPct(x)}));
+    const b=[...rows].sort((a,b)=>b.preparation-a.preparation)[0]||null;
+    return{time:new Date(c.time).toISOString(),overall:b?.preparation??0,direction:b?.side??"NEUTRAL" as "LONG"|"SHORT"|"NEUTRAL"};
+  });
+  return{
+    overall:best?.preparation??0,
+    direction:(best?.side??"NEUTRAL") as "LONG"|"SHORT"|"NEUTRAL",
+    updatedAt:new Date(nowMs).toISOString(),
+    engines:engines.map(x=>({engine:x.engine,side:x.side,preparation:x.preparation,rawScore:x.rawScore,threshold:x.threshold,m1Confirmed:x.m1Confirmed,mandatoryOk:x.mandatoryOk,riskPct:+(x.riskPct*100).toFixed(3),factors:x.factors,missing:x.missing})),
+    history:points
+  };
+}
+
 function buildMarketMap(raw:any[],price:number){
   const candles=raw.map(mapCandle).filter((x):x is MapCandle=>!!x).slice(-360);
   const ranges=candles.slice(-60).map(c=>c.high-c.low).filter(x=>x>0);
@@ -174,6 +216,7 @@ export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
     {engine:"LIQUIDITY_CONTINUATION",threshold:64}
   ];
   const marketMap=buildMarketMap(raw5,quote.price);
+  const preparation=buildPreparation(raw5,raw1,specs,now.getTime());
   const evaluated=specs.map(s=>({s,c:evaluateLatestIndependentSignal(raw5,raw1,s.engine,s.threshold,now.getTime())}));
   const acceptedBase=evaluated.filter((x):x is {s:{engine:Engine;threshold:number};c:Diag}=>!!x.c&&eligible(x.s.engine,x.c));
   const merged=mergeCurrent(acceptedBase.map(x=>({engine:x.s.engine,c:x.c})));
@@ -199,7 +242,7 @@ export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
       setup:{entryZone:[quote.price,quote.price],stop:quote.price,target1:quote.price,target2:quote.price,rr:0},
       factors:activeEngines.map(x=>({label:engineLabels[x.engine],score:x.score,note:x.reason})),
       updatedAt:new Date().toISOString(),source:"Capital.com",epic,marketStatus:quote.marketStatus,
-      engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%; timing ao vivo ≤ 0,25R",activeEngines,marketMap,dna:null,execution:"MANUAL_ONLY"
+      engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%; timing ao vivo ≤ 0,25R",activeEngines,marketMap,preparation,dna:null,execution:"MANUAL_ONLY"
     };
   }
 
@@ -220,7 +263,7 @@ export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
       setup:{entryZone:[quote.price,quote.price],stop:selected.stop,target1:quote.price,target2:quote.price,rr:0},
       factors:activeEngines.map(x=>({label:engineLabels[x.engine],score:x.score,note:x.reason})),
       updatedAt:new Date().toISOString(),source:"Capital.com",epic,marketStatus:quote.marketStatus,
-      engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%; timing ao vivo ≤ 0,25R",activeEngines,marketMap,dna:null,execution:"MANUAL_ONLY"
+      engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%; timing ao vivo ≤ 0,25R",activeEngines,marketMap,preparation,dna:null,execution:"MANUAL_ONLY"
     };
   }
 
@@ -245,6 +288,6 @@ export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
     setup:{entryZone:[+selected.entry.toFixed(2),+selected.entry.toFixed(2)],stop:+selected.stop.toFixed(2),target1:+t2.toFixed(2),target2:+t3.toFixed(2),rr:3},
     factors:activeEngines.map(x=>({label:engineLabels[x.engine],score:x.score,note:x.reason})),
     updatedAt:new Date().toISOString(),source:"Capital.com",epic,marketStatus:quote.marketStatus,
-    engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%",activeEngines,marketMap,dna,execution:"MANUAL_ONLY"
+    engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%",activeEngines,marketMap,preparation,dna,execution:"MANUAL_ONLY"
   };
 }
