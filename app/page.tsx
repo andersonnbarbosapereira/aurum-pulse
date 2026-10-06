@@ -35,6 +35,29 @@ function drawdown(rs:number[]){
   for(const r of rs){equity+=r;peak=Math.max(peak,equity);max=Math.max(max,peak-equity);}
   return max;
 }
+function distPoints(level:number,price:number){return level-price;}
+function distR(level:number,price:number,risk:number){return risk>0?(level-price)/risk:null;}
+function tagsForLevel(level:any,zones:any[],signal:any,active:any){
+  const tags:string[]=[];
+  if(level.strength==="FORTE")tags.push("nível forte");
+  if(Number(level.touches)>=5)tags.push(String(level.touches)+" testes");
+  const ageH=(Date.now()-Date.parse(level.lastTouch))/3600000;
+  if(Number.isFinite(ageH)&&ageH<=6)tags.push("toque recente");
+  const z=zones.find((x:any)=>level.price>=x.low&&level.price<=x.high);
+  if(z)tags.push("dentro de "+z.type.toLowerCase());
+  const ref=active||signal;
+  if(ref){
+    const risk=Math.abs(n(ref.entry)-n(ref.original_stop??ref.originalStop));
+    if(risk>0){
+      const near=(a:any)=>Math.abs(level.price-n(a))<=risk*.18;
+      if(near(ref.entry))tags.push("próximo da entrada");
+      if(near(ref.original_stop??ref.originalStop))tags.push("próximo do stop");
+      if(near(ref.target_2r??ref.target2R))tags.push("próximo de 2R");
+      if(near(ref.target_3r??ref.target3R))tags.push("próximo de 3R");
+    }
+  }
+  return tags;
+}
 
 export default async function Home(){
   let market:Awaited<ReturnType<typeof getLiveFinalSnapshot>>|null=null;
@@ -64,6 +87,16 @@ export default async function Home(){
   const activeR=active?currentR(active,market.price):0;
   const signal=market.dna;
   const aiReady=Boolean(process.env.GROQ_API_KEY);
+  const riskRef=active?Math.abs(n(active.entry)-n(active.original_stop)):signal?Math.abs(n(signal.entry)-n(signal.originalStop)):0;
+  const ladder=[
+    ...market.marketMap.resistance.map((x:any)=>({kind:"RESISTÊNCIA",price:x.price,strength:x.strength,score:x.score,touches:x.touches,lastTouch:x.lastTouch})),
+    ...market.marketMap.interestZones.map((z:any)=>({kind:z.type==="OFERTA"?"OFERTA":"DEMANDA",price:z.center,strength:z.strength,score:z.score,touches:null,lastTouch:null,low:z.low,high:z.high})),
+    ...(signal?[{kind:"3R",price:signal.target3R,strength:"ALVO",score:100},{kind:"2R",price:signal.target2R,strength:"ALVO",score:100},{kind:"ENTRADA",price:signal.entry,strength:"ATUAL",score:100},{kind:"STOP",price:signal.originalStop,strength:"RISCO",score:100}]:[]),
+    ...(active?[{kind:"TRADE",price:n(active.entry),strength:"ATIVO",score:100},{kind:"STOP ATUAL",price:n(active.current_stop??active.original_stop),strength:"RISCO",score:100},{kind:"2R",price:n(active.target_2r),strength:"ALVO",score:100},{kind:"3R",price:n(active.target_3r),strength:"ALVO",score:100}]:[]),
+    {kind:"PREÇO",price:market.price,strength:"AGORA",score:100},
+    ...market.marketMap.support.map((x:any)=>({kind:"SUPORTE",price:x.price,strength:x.strength,score:x.score,touches:x.touches,lastTouch:x.lastTouch}))
+  ].sort((a:any,b:any)=>b.price-a.price);
+  const recentTrades=trades.slice(0,10);
 
   return <main className="shell">
     <header className="topbar">
@@ -183,6 +216,44 @@ export default async function Home(){
       </details>
     </section>
 
+    <section className="section-headline"><div><span className="section-kicker">PRICE LADDER</span><h2>Mapa vertical de preço</h2></div><span className="muted">Obstáculos, zonas e níveis em uma única escala</span></section>
+    <section className="ladder-layout">
+      <article className="card ladder-card">
+        <div className="ladder">
+          {ladder.map((item:any,i:number)=>{
+            const dp=distPoints(item.price,market.price);
+            const dr=distR(item.price,market.price,riskRef);
+            const isNow=item.kind==="PREÇO";
+            const isRisk=item.kind.includes("STOP");
+            const isTarget=item.kind==="2R"||item.kind==="3R";
+            return <div className={"ladder-row "+(isNow?"ladder-now":isRisk?"ladder-risk":isTarget?"ladder-target":"")} key={item.kind+item.price+String(i)}>
+              <div className="ladder-side"><span>{item.kind}</span>{item.strength&&<small>{item.strength}</small>}</div>
+              <div className="ladder-line"><i /></div>
+              <div className="ladder-price"><strong>{px(item.price)}</strong><span>{dp===0?"preço atual":(dp>0?"+":"")+dp.toFixed(2)+" pts"}{dr!=null?" · "+(dr>=0?"+":"")+dr.toFixed(2)+"R":""}</span></div>
+            </div>;
+          })}
+        </div>
+      </article>
+      <article className="card obstacle-card">
+        <div className="card-head"><span>Leitura de obstáculos</span><span className="muted">{riskRef>0?"distância em R ativa":"sem R de referência"}</span></div>
+        <div className="obstacle-list">
+          {[...market.marketMap.resistance,...market.marketMap.support].sort((a:any,b:any)=>a.distancePct-b.distancePct).slice(0,6).map((x:any)=>(
+            <details className="obstacle-detail" key={"o"+x.price}>
+              <summary><div><strong>{px(x.price)}</strong><span>{x.price>market.price?"acima":"abaixo"} · {x.distancePct.toFixed(3)}%</span></div><Pill tone={x.strength==="FORTE"?"good":"neutral"}>{x.strength}</Pill></summary>
+              <div className="confluence-tags">
+                {tagsForLevel(x,market.marketMap.interestZones,signal,active).map((tag)=><span key={tag}>{tag}</span>)}
+              </div>
+              <div className="detail-body">
+                <span>{(x.price-market.price)>=0?"+":""}{(x.price-market.price).toFixed(2)} pts</span>
+                {riskRef>0&&<span>{rfmt((x.price-market.price)/riskRef)}</span>}
+                <span>score {x.score}/100</span>
+              </div>
+            </details>
+          ))}
+        </div>
+      </article>
+    </section>
+
     <section className="content-grid">
       <article className="card setup-card">
         <div className="card-head"><span>Setup / risco</span><span className="muted">{signal?signal.signalClass:"SEM GATILHO"}</span></div>
@@ -232,6 +303,33 @@ export default async function Home(){
       <article className="stat-card"><small>Resultado acumulado</small><strong className={totalR>=0?"positive-text":"negative-text"}>{rfmt(totalR)}</strong><span>{money(totalUsd)} bruto simplificado</span></article>
       <article className="stat-card"><small>Taxa de acerto</small><strong>{closed.length?winRate.toFixed(1)+"%":"—"}</strong><span>{closed.length?String(wins)+" positivos de "+String(closed.length):"amostra ainda vazia"}</span></article>
       <article className="stat-card"><small>Drawdown forward</small><strong>{closed.length?maxDd.toFixed(2)+"R":"—"}</strong><span>somente LIVE_V2</span></article>
+    </section>
+
+    <section className="section-headline"><div><span className="section-kicker">HISTÓRICO</span><h2>Últimos sinais LIVE_V2</h2></div><span className="muted">Clique para abrir cada operação</span></section>
+    <section className="card history-card">
+      {recentTrades.length?<div className="history-list">
+        {recentTrades.map((t:any)=>(
+          <details className="history-row" key={t.id}>
+            <summary>
+              <span>{time(t.first_seen_at)}</span>
+              <strong>{t.side==="LONG"?"COMPRA":"VENDA"}</strong>
+              <span>{t.signal_class}</span>
+              <span>{Array.isArray(t.engines)?t.engines.map(engineName).join(" + "):"FINAL_V1"}</span>
+              <span className={n(t.realized_r)>0?"positive-text":n(t.realized_r)<0?"negative-text":""}>{t.realized_r==null?t.status:rfmt(t.realized_r)}</span>
+            </summary>
+            <div className="history-detail">
+              <div><small>Entrada</small><strong>{px(t.entry)}</strong></div>
+              <div><small>Stop</small><strong>{px(t.original_stop)}</strong></div>
+              <div><small>2R</small><strong>{px(t.target_2r)}</strong></div>
+              <div><small>3R</small><strong>{px(t.target_3r)}</strong></div>
+              <div><small>MFE</small><strong>{rfmt(t.mfe_r)}</strong></div>
+              <div><small>MAE</small><strong>{rfmt(t.mae_r)}</strong></div>
+              <div><small>IA</small><strong>{t.last_ai_action||"—"}</strong></div>
+              <div><small>Status</small><strong>{t.status}</strong></div>
+            </div>
+          </details>
+        ))}
+      </div>:<div className="empty-state"><strong>Ainda não existem operações LIVE_V2.</strong><p>O histórico começa no próximo sinal oficial após as correções de entrada ao vivo.</p></div>}
     </section>
 
     <section className="lower-grid">
