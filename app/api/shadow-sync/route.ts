@@ -1,6 +1,7 @@
 import { NextRequest,NextResponse } from "next/server";
 import { getLiveFinalSnapshot } from "@/lib/live-final-engine";
 import { recordShadowSignal,shadowHealth } from "@/lib/shadow-recorder";
+import { ensureTelegramChat,sendTelegramSignal } from "@/lib/telegram-bot";
 
 export const dynamic="force-dynamic";
 export const maxDuration=60;
@@ -11,8 +12,11 @@ async function sync(req:NextRequest){
   if(!expected||auth!=="Bearer "+expected)return NextResponse.json({error:"unauthorized"},{status:401});
   try{
     const health=await shadowHealth();
+    const chat=await ensureTelegramChat();
     const snapshot=await getLiveFinalSnapshot();
     const write=await recordShadowSignal(snapshot);
+    let telegram={sent:false as boolean,reason:"SEM_CHAT_OU_SEM_SINAL"};
+    if(chat.chatId&&snapshot.dna&&write.recorded&&write.result?.created===true)telegram=await sendTelegramSignal(snapshot,chat.chatId) as any;
     return NextResponse.json({
       ok:true,
       engineVersion:snapshot.engineVersion,
@@ -20,6 +24,8 @@ async function sync(req:NextRequest){
       marketStatus:snapshot.marketStatus,
       decision:snapshot.dna?(snapshot.dna.side+":"+snapshot.dna.signalClass):"AGUARDAR",
       shadowStorage:health?.ok===true?"ready":"unknown",
+      telegramChat:chat.chatId?"bound":"waiting_start",
+      telegram,
       ...write
     },{headers:{"X-Robots-Tag":"noindex"}});
   }catch(error){
