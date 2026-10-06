@@ -63,6 +63,31 @@ export function buildIndependentCandidates(raw5:Raw[],raw1:Raw[],engine:Engine,t
   return out;
 }
 
+
+export function evaluateLatestIndependentSignal(raw5:Raw[],raw1:Raw[],engine:Engine,threshold:number,nowMs=Date.now()):Diag|null{
+  const m5=raw5.map(norm).filter((x):x is C=>!!x).filter(x=>x.time<=nowMs-300000).sort((a,b)=>a.time-b.time);
+  const m1=raw1.map(norm).filter((x):x is C=>!!x).filter(x=>x.time<=nowMs-60000).sort((a,b)=>a.time-b.time);
+  if(m5.length<130||m1.length<10)return null;
+  const m15=agg(m5,15),h1=agg(m5,60),i=m5.length-1,s=m5[i],ct=s.time+300000;
+  let p15=-1,p1=-1,pm1=-1;
+  while(p15+1<m15.length&&m15[p15+1].time<=ct-900000)p15++;
+  while(p1+1<h1.length&&h1[p1+1].time<=ct-3600000)p1++;
+  while(pm1+1<m1.length&&m1[pm1+1].time<=ct-60000)pm1++;
+  if(p15<40||p1<25||pm1<8||!inWindow(s.time))return null;
+  const a5=m5.slice(Math.max(0,i-120),i+1),a15=m15.slice(Math.max(0,p15-100),p15+1),a1=h1.slice(Math.max(0,p1-100),p1+1),aM1=m1.slice(Math.max(0,pm1-25),pm1+1),h1f=flow(a1),m15f=flow(a15),pd=prevDayLevels(m5,i),sess=sessionLevels(m5,i);
+  for(const side of ["LONG","SHORT"] as Side[]){
+    const levels=side==="LONG"?[pd?.lo??NaN,sess.asiaLo,sess.midOpen??NaN]:[pd?.hi??NaN,sess.asiaHi,sess.midOpen??NaN];
+    const common={side,h1:h1f,m15:m15f,majorSweep:sweepLevel(s,side,levels),sweep:sweepLocal(a5,side,8),counterSweep:sweepLocal(a5,side,12),disp:displacement(a5,side),bos:bos(a5,side),ob:obValidated(a5,side,s.close)||obValidated(a15,side,s.close),fvg:fvg(a5,side,s.close)||fvg(a15,side,s.close),candle:candle(a5,side),fibM5:fib(a5,side,s.close)};
+    const score=scoreEngine(engine,common);
+    if(score<threshold||!m1ok(aM1,side,ct-60000))continue;
+    const en=s.close,stop=side==="LONG"?Math.min(...a5.slice(-10).map(c=>c.low)):Math.max(...a5.slice(-10).map(c=>c.high)),risk=Math.abs(en-stop);
+    if(risk<=0)return null;
+    const take=side==="LONG"?en+risk*2:en-risk*2;
+    return{side,entry:en,stop,take,risk,time:s.time,baselineR:0,path:[],h1f,score,majorSweep:common.majorSweep,institutionalScore:engine==="INSTITUTIONAL_PULLBACK"?score:0,continuationScore:engine==="LIQUIDITY_CONTINUATION"?score:0,engineAgreement:1,features:{h1Aligned:h1f===side,m15Aligned:m15f===side,bos:common.bos,disp:common.disp,ob:common.ob,fvg:common.fvg,candle:common.candle,sweep:common.sweep,counterSweep:common.counterSweep,fib:common.fibM5,riskPct:risk/en}};
+  }
+  return null;
+}
+
 function stats(cs:BaseCandidate[]){
   const rows=cs.map(c=>{const r=simulate(c,"RUNNER_3R" as any),usd=r*Math.abs(c.entry-c.stop);return{time:c.time,r,usd}});
   const trades=rows.length,totalR=rows.reduce((s,x)=>s+x.r,0),totalUsd=rows.reduce((s,x)=>s+x.usd,0),wins=rows.filter(x=>x.r>0).length,stops=rows.filter(x=>x.r<=-.999).length;
