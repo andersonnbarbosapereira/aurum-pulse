@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/shadow-sync",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}
