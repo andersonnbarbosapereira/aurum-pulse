@@ -13,6 +13,8 @@ export type AiTradeContext = {
   unrealizedR: number;
   mfeR?: number | null;
   maeR?: number | null;
+  managementStage?: "PRE_2R" | "RUNNER_70";
+  partial2RDone?: boolean;
   setupName?: string | null;
   reasons?: string[];
   market: {
@@ -75,8 +77,12 @@ function sanitizeStop(ctx: AiTradeContext, proposed: unknown): number | null {
 
 function applyPolicyGate(ctx: AiTradeContext, d: AiManagementDecision): AiManagementDecision {
   const r = ctx.unrealizedR;
-  if (["PROTEGER","BREAKEVEN","TRAILING"].includes(d.action) && r < 2) {
+  const partialDone = ctx.partial2RDone === true || ctx.managementStage === "RUNNER_70";
+  if (["PROTEGER","BREAKEVEN","TRAILING"].includes(d.action) && !partialDone && r < 2) {
     return { ...d, action:"MANTER", suggestedStop:null, reason:`Portão de retorno: ${d.reason} | Proteção bloqueada antes de 2R para não cortar prematuramente um vencedor saudável.` };
+  }
+  if (d.action === "PARCIAL" && partialDone) {
+    return { ...d, action:"MANTER", partialPercent:null, suggestedStop:null, reason:`Portão de estágio: ${d.reason} | A parcial determinística de 30% em 2R já foi realizada; não existe segunda parcial automática no MGMT_V1.` };
   }
   if (d.action === "PARCIAL" && r < 2) {
     return { ...d, action:"MANTER", partialPercent:null, reason:`Portão de retorno: ${d.reason} | Parcial bloqueada antes de 2R.` };
