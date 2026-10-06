@@ -27,16 +27,9 @@ export default function LivePrice({initial}:{initial:Quote}){
   },[]);
 
   return (
-    <>
-      <div className="price-row">
-        <div className="price">{q.price.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-        <div className="change">{q.changePercent>=0?"+":""}{q.changePercent.toFixed(2)}%</div>
-      </div>
-      <div className="mini-grid">
-        <div><small>Bid</small><strong>{q.bid?.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}) ?? "—"}</strong></div>
-        <div><small>Ask</small><strong>{q.ask?.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}) ?? "—"}</strong></div>
-        <div><small>Atualização</small><strong>~2s</strong></div>
-      </div>
-    </>
+    <div className="price-row">
+      <div className="price">{q.price.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div className="change">{q.changePercent>=0?"+":""}{q.changePercent.toFixed(2)}%</div>
+    </div>
   );
 }
