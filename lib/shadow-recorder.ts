@@ -31,11 +31,13 @@ export async function shadowHealth(){return callShadowWrite({action:"health"});}
 export async function recordShadowSignal(snapshot:LiveFinalSnapshot){
   const d=snapshot.dna;
   if(!d)return{recorded:false,reason:"AGUARDAR"};
-  const signalKey=[d.version,d.signalTime,d.side,d.entry,d.originalStop,d.engines.join("+")].join("|");
+  const signalKey=[d.version,d.signalTime,d.side,d.modelEntry,d.originalStop,d.engines.join("+")].join("|");
   const payload={
     signal_key:signalKey,
     engine_version:d.version,
     signal_time:d.signalTime,
+    observed_at:d.observedAt,
+    model_entry:d.modelEntry,
     side:d.side,
     signal_class:d.signalClass,
     engines:d.engines,
