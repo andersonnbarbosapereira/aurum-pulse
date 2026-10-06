@@ -63,3 +63,6 @@ export async function getBoundTelegramChat(){return callShadowWrite({action:"get
 export async function bindTelegramChat(chat:any){return callShadowWrite({action:"bind_chat",chat});}
 
 export async function getShadowDashboard(){return callShadowWrite({action:"get_dashboard"});}
+
+export async function getSystemHealth(){return callShadowWrite({action:"get_system_health"});}
+export async function setSystemHealth(health:any){return callShadowWrite({action:"set_system_health",health});}
