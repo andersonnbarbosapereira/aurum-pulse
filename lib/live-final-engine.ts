@@ -1,5 +1,5 @@
 import type { MarketSnapshot } from "@/lib/market";
-import { getHistoricalPrices, getLiveSnapshot, resolveGoldEpic } from "@/lib/capital";
+import { getHistoricalPrices, getLiveQuote, resolveGoldEpic } from "@/lib/capital";
 import { evaluateLatestIndependentSignal, type Diag, type Engine } from "@/lib/independent-engine-research";
 
 type Tagged = Diag & { engines: Engine[] };
@@ -11,6 +11,8 @@ export type TradeThesisDna = {
   side: "LONG" | "SHORT";
   score: number;
   signalTime: string;
+  observedAt: string;
+  modelEntry: number;
   entry: number;
   originalStop: number;
   riskPoints: number;
@@ -94,7 +96,7 @@ export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
   const [raw5,raw1,quote]=await Promise.all([
     getHistoricalPrices(epic,"MINUTE_5",from5,now,1000),
     getHistoricalPrices(epic,"MINUTE",from1,now,300),
-    getLiveSnapshot()
+    getLiveQuote()
   ]);
 
   const specs:{engine:Engine;threshold:number}[]=[
@@ -127,19 +129,42 @@ export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
       setup:{entryZone:[quote.price,quote.price],stop:quote.price,target1:quote.price,target2:quote.price,rr:0},
       factors:activeEngines.map(x=>({label:engineLabels[x.engine],score:x.score,note:x.reason})),
       updatedAt:new Date().toISOString(),source:"Capital.com",epic,marketStatus:quote.marketStatus,
-      engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%",activeEngines,dna:null,execution:"MANUAL_ONLY"
+      engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%; timing ao vivo ≤ 0,25R",activeEngines,dna:null,execution:"MANUAL_ONLY"
     };
   }
 
-  const rs=reasons(selected),t2=target(selected.side,selected.entry,selected.risk,2),t3=target(selected.side,selected.entry,selected.risk,3);
+  const deviationR=Math.abs(quote.price-selected.entry)/Math.max(selected.risk,0.0001);
+  const stopValid=selected.side==="LONG"?quote.price>selected.stop:quote.price<selected.stop;
+  const liveRisk=Math.abs(quote.price-selected.stop);
+  const liveRiskPct=liveRisk/quote.price;
+  if(!stopValid||deviationR>0.25||liveRiskPct>0.0035){
+    const reason=!stopValid
+      ?"Preço atual já atravessou a invalidação estrutural."
+      :deviationR>0.25
+        ?`Setup válido, mas preço atual afastou ${deviationR.toFixed(2)}R da entrada estrutural; não perseguir preço.`
+        :"Risco estrutural ao preço atual excede 0,35%.";
+    return{
+      symbol:"XAUUSD",price:quote.price,changePercent:quote.changePercent,bias:"WAIT",confidence:45,
+      session:"Mercado global",regime:"TRANSITION",
+      structure:reason,
+      setup:{entryZone:[quote.price,quote.price],stop:selected.stop,target1:quote.price,target2:quote.price,rr:0},
+      factors:activeEngines.map(x=>({label:engineLabels[x.engine],score:x.score,note:x.reason})),
+      updatedAt:new Date().toISOString(),source:"Capital.com",epic,marketStatus:quote.marketStatus,
+      engineVersion:"FINAL_V1",finalGate:"BOS OU 2+ motores; risco estrutural ≤ 0,35%; timing ao vivo ≤ 0,25R",activeEngines,dna:null,execution:"MANUAL_ONLY"
+    };
+  }
+
+  const liveEntry=quote.price;
+  const rs=reasons(selected),t2=target(selected.side,liveEntry,liveRisk,2),t3=target(selected.side,liveEntry,liveRisk,3);
   const signalClass: "PREMIUM"|"PREMIUM+" = selected.engines.length>1||selected.score>=80?"PREMIUM+":"PREMIUM";
   const dna:TradeThesisDna={
     version:"FINAL_V1",signalClass,engines:selected.engines,side:selected.side,score:selected.score,
-    signalTime:new Date(selected.time).toISOString(),entry:+selected.entry.toFixed(2),originalStop:+selected.stop.toFixed(2),
-    riskPoints:+selected.risk.toFixed(2),riskPercent:+(selected.features.riskPct*100).toFixed(3),
-    estimatedRiskUsd001:+selected.risk.toFixed(2),target2R:+t2.toFixed(2),target3R:+t3.toFixed(2),
+    signalTime:new Date(selected.time).toISOString(),observedAt:new Date().toISOString(),modelEntry:+selected.entry.toFixed(2),
+    entry:+liveEntry.toFixed(2),originalStop:+selected.stop.toFixed(2),
+    riskPoints:+liveRisk.toFixed(2),riskPercent:+(liveRiskPct*100).toFixed(3),
+    estimatedRiskUsd001:+liveRisk.toFixed(2),target2R:+t2.toFixed(2),target3R:+t3.toFixed(2),
     confirmations:{bos:selected.features.bos,displacement:selected.features.disp,m1:true,h1Aligned:selected.features.h1Aligned,m15Aligned:selected.features.m15Aligned,orderBlock:selected.features.ob,fvg:selected.features.fvg,fibonacci:selected.features.fib,liquiditySweep:selected.features.sweep,majorLiquiditySweep:selected.majorSweep},
-    thesis:rs,
+    thesis:[...rs,`timing ao vivo: desvio ${deviationR.toFixed(2)}R`],
     invalidation:`Fechamento/continuidade além do stop estrutural ${selected.stop.toFixed(2)} ou quebra objetiva da tese monitorada pela IA.`
   };
   const confidence=Math.min(95,Math.round(55+Math.min(25,(selected.score-68)*1.2)+(selected.engines.length>1?10:0)+(selected.features.bos&&selected.features.disp?8:0)));
