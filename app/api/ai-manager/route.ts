@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { manageTradeWithAi, type AiTradeContext } from "@/lib/ai-manager";
-import { getLiveSnapshot } from "@/lib/capital";
+import { getLiveFinalSnapshot } from "@/lib/live-final-engine";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const snapshot = await getLiveSnapshot();
+    const snapshot = await getLiveFinalSnapshot();
     const ctx: AiTradeContext = {
       symbol: "XAUUSD",
       side: body.side,
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       mfeR: body.mfeR == null ? null : Number(body.mfeR),
       maeR: body.maeR == null ? null : Number(body.maeR),
       setupName: body.setupName ?? "Reversão de Liquidez",
-      reasons: Array.isArray(body.reasons) ? body.reasons.map(String) : [],
+      reasons: Array.isArray(body.reasons) ? body.reasons.map(String) : (snapshot.dna?.thesis ?? []),
       market: {
         bias: snapshot.bias,
         regime: snapshot.regime,
