@@ -64,6 +64,63 @@ export function buildIndependentCandidates(raw5:Raw[],raw1:Raw[],engine:Engine,t
 }
 
 
+export type EngineReadinessState={
+  engine:Engine;
+  side:Side;
+  time:number;
+  rawScore:number;
+  threshold:number;
+  m1Confirmed:boolean;
+  mandatoryOk:boolean;
+  riskPct:number;
+  factors:Array<{key:string;label:string;active:boolean;weight:number}>;
+  missing:string[];
+};
+
+export function evaluateLatestEngineReadiness(raw5:Raw[],raw1:Raw[],engine:Engine,threshold:number,nowMs=Date.now()):EngineReadinessState|null{
+  const m5=raw5.map(norm).filter((x):x is C=>!!x).filter(x=>x.time<=nowMs-300000).sort((a,b)=>a.time-b.time);
+  const m1=raw1.map(norm).filter((x):x is C=>!!x).filter(x=>x.time<=nowMs-60000).sort((a,b)=>a.time-b.time);
+  if(m5.length<130||m1.length<10)return null;
+  const m15=agg(m5,15),h1=agg(m5,60),i=m5.length-1,s=m5[i],ct=s.time+300000;
+  let p15=-1,p1=-1,pm1=-1;
+  while(p15+1<m15.length&&m15[p15+1].time<=ct-900000)p15++;
+  while(p1+1<h1.length&&h1[p1+1].time<=ct-3600000)p1++;
+  while(pm1+1<m1.length&&m1[pm1+1].time<=ct-60000)pm1++;
+  if(p15<40||p1<25||pm1<8||!inWindow(s.time))return null;
+  const a5=m5.slice(Math.max(0,i-120),i+1),a15=m15.slice(Math.max(0,p15-100),p15+1),a1=h1.slice(Math.max(0,p1-100),p1+1),aM1=m1.slice(Math.max(0,pm1-25),pm1+1),h1f=flow(a1),m15f=flow(a15),pd=prevDayLevels(m5,i),sess=sessionLevels(m5,i);
+  const rows:EngineReadinessState[]=[];
+  for(const side of ["LONG","SHORT"] as Side[]){
+    const levels=side==="LONG"?[pd?.lo??NaN,sess.asiaLo,sess.midOpen??NaN]:[pd?.hi??NaN,sess.asiaHi,sess.midOpen??NaN];
+    const x={side,h1:h1f,m15:m15f,majorSweep:sweepLevel(s,side,levels),sweep:sweepLocal(a5,side,8),counterSweep:sweepLocal(a5,side,12),disp:displacement(a5,side),bos:bos(a5,side),ob:obValidated(a5,side,s.close)||obValidated(a15,side,s.close),fvg:fvg(a5,side,s.close)||fvg(a15,side,s.close),candle:candle(a5,side),fibM5:fib(a5,side,s.close)};
+    const rawScore=scoreEngine(engine,x),stop=side==="LONG"?Math.min(...a5.slice(-10).map(c=>c.low)):Math.max(...a5.slice(-10).map(c=>c.high)),risk=Math.abs(s.close-stop),riskPct=risk>0?risk/s.close:1;
+    const weights:Record<string,number>=engine==="LIQUIDITY_REVERSAL"
+      ?{majorSweep:28,sweep:10,disp:16,bos:16,ob:12,fvg:10,candle:8,h1Counter:6,fibM5:10}
+      :engine==="INSTITUTIONAL_PULLBACK"
+        ?{h1Aligned:16,m15Aligned:12,ob:18,fvg:12,disp:12,bos:12,candle:8,sweep:10,fibM5:10}
+        :{h1Aligned:18,m15Aligned:12,counterSweep:22,bos:14,disp:12,ob:10,fvg:8,candle:6,fibM5:10};
+    const active:Record<string,boolean>={
+      majorSweep:x.majorSweep,sweep:x.sweep,disp:x.disp,bos:x.bos,ob:x.ob,fvg:x.fvg,candle:x.candle,
+      h1Counter:!!x.h1&&x.h1!==side,fibM5:x.fibM5,h1Aligned:x.h1===side,m15Aligned:x.m15===side,counterSweep:x.counterSweep
+    };
+    const labels:Record<string,string>={majorSweep:"Sweep de liquidez maior",sweep:"Sweep local",disp:"Deslocamento",bos:"BOS",ob:"Order Block",fvg:"FVG",candle:"Padrão de candle",h1Counter:"H1 contrário favorável à reversão",fibM5:"Fib M5",h1Aligned:"H1 alinhado",m15Aligned:"M15 alinhado",counterSweep:"Counter-sweep"};
+    const factors=Object.entries(weights).map(([key,weight])=>({key,label:labels[key]||key,active:!!active[key],weight}));
+    const mandatoryOk=engine==="LIQUIDITY_REVERSAL"?true:(x.h1===side&&x.m15===side&&x.bos&&x.disp);
+    const m1Confirmed=m1ok(aM1,side,ct-60000);
+    const missing:string[]=[];
+    if(rawScore<threshold)missing.push("score abaixo do threshold");
+    if(!m1Confirmed)missing.push("confirmação M1");
+    if(engine!=="LIQUIDITY_REVERSAL"){
+      if(x.h1!==side)missing.push("H1 alinhado");
+      if(x.m15!==side)missing.push("M15 alinhado");
+      if(!x.bos)missing.push("BOS");
+      if(!x.disp)missing.push("deslocamento");
+    }
+    if(riskPct>.0035)missing.push("risco ≤ 0,35%");
+    rows.push({engine,side,time:s.time,rawScore,threshold,m1Confirmed,mandatoryOk,riskPct,factors,missing});
+  }
+  return rows.sort((a,b)=>(b.rawScore-a.rawScore)||Number(b.m1Confirmed)-Number(a.m1Confirmed))[0]||null;
+}
+
 export function evaluateLatestIndependentSignal(raw5:Raw[],raw1:Raw[],engine:Engine,threshold:number,nowMs=Date.now()):Diag|null{
   const m5=raw5.map(norm).filter((x):x is C=>!!x).filter(x=>x.time<=nowMs-300000).sort((a,b)=>a.time-b.time);
   const m1=raw1.map(norm).filter((x):x is C=>!!x).filter(x=>x.time<=nowMs-60000).sort((a,b)=>a.time-b.time);
