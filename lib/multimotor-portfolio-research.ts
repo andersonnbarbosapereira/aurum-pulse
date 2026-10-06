@@ -2,6 +2,7 @@ import { buildIndependentCandidates, type Diag, type Engine } from "@/lib/indepe
 import { simulate } from "@/lib/exit-policy-research";
 
 type Tagged=Diag&{engines:Engine[]};
+type Row={c:Tagged;r:number;usd:number;riskPct:number;hourBr:number;fullStop:boolean};
 
 function eligible(engine:Engine,c:Diag){
   if(engine==="LIQUIDITY_REVERSAL") return true;
@@ -48,11 +49,10 @@ function mergeCandidates(raw5:any[],raw1:any[]){
   return{unique,source,rawSignals:all.length,duplicatesRemoved};
 }
 
+function makeRows(cs:Tagged[]):Row[]{return cs.map(c=>{const r=simulate(c,"RUNNER_3R" as any),riskUsd=Math.abs(c.entry-c.stop),usd=r*riskUsd,d=new Date(c.time-3*3600000);return{c,r,usd,riskPct:c.risk/c.entry,hourBr:d.getUTCHours(),fullStop:r<=-.999}})}
 function stats(cs:Tagged[]){
-  const rows=cs.map(c=>{
-    const r=simulate(c,"RUNNER_3R" as any),riskUsd=Math.abs(c.entry-c.stop),usd=r*riskUsd;
-    return{time:c.time,r,usd,side:c.side,engines:c.engines,riskUsd,score:c.score};
-  });
+  const rr=makeRows(cs);
+  const rows=rr.map(x=>({time:x.c.time,r:x.r,usd:x.usd,side:x.c.side,engines:x.c.engines,riskUsd:Math.abs(x.c.entry-x.c.stop),score:x.c.score}));
   const trades=rows.length,totalR=rows.reduce((s,x)=>s+x.r,0),totalUsd=rows.reduce((s,x)=>s+x.usd,0);
   const wins=rows.filter(x=>x.r>0).length,losses=rows.filter(x=>x.r<0).length,stops=rows.filter(x=>x.r<=-.999).length;
   let eq=0,peak=0,dd=0;
@@ -73,6 +73,41 @@ function stats(cs:Tagged[]){
   };
 }
 
+
+function mini(rows:Row[]){
+  const trades=rows.length,totalUsd=rows.reduce((s,x)=>s+x.usd,0),totalR=rows.reduce((s,x)=>s+x.r,0),wins=rows.filter(x=>x.r>0).length,stops=rows.filter(x=>x.fullStop).length;
+  return{trades,totalUsd:+totalUsd.toFixed(2),avgUsd:+(totalUsd/Math.max(1,trades)).toFixed(2),totalR:+totalR.toFixed(2),winRate:+(wins/Math.max(1,trades)*100).toFixed(1),fullStopRate:+(stops/Math.max(1,trades)*100).toFixed(1)};
+}
+function diagnostics(cs:Tagged[]){
+  const rows=makeRows(cs);
+  const byHour:any={};for(let h=0;h<24;h++){const x=rows.filter(r=>r.hourBr===h);if(x.length)byHour[h]=mini(x)}
+  const byRisk={
+    ate02:mini(rows.filter(r=>r.riskPct<=.002)),
+    de02a035:mini(rows.filter(r=>r.riskPct>.002&&r.riskPct<=.0035)),
+    de035a05:mini(rows.filter(r=>r.riskPct>.0035))
+  };
+  const byAgreement={
+    single:mini(rows.filter(r=>r.c.engines.length===1)),
+    multi:mini(rows.filter(r=>r.c.engines.length>1))
+  };
+  const bySide={LONG:mini(rows.filter(r=>r.c.side==="LONG")),SHORT:mini(rows.filter(r=>r.c.side==="SHORT"))};
+  const lrOnly=rows.filter(r=>r.c.engines.includes("LIQUIDITY_REVERSAL"));
+  const lrScore={
+    s68a71:mini(lrOnly.filter(r=>r.c.score>=68&&r.c.score<72)),
+    s72a79:mini(lrOnly.filter(r=>r.c.score>=72&&r.c.score<80)),
+    s80plus:mini(lrOnly.filter(r=>r.c.score>=80))
+  };
+  const features={
+    bosDisp:mini(rows.filter(r=>r.c.features.bos&&r.c.features.disp)),
+    noBos:mini(rows.filter(r=>!r.c.features.bos)),
+    noDisp:mini(rows.filter(r=>!r.c.features.disp)),
+    obOrFvg:mini(rows.filter(r=>r.c.features.ob||r.c.features.fvg)),
+    fib:mini(rows.filter(r=>r.c.features.fib))
+  };
+  return{byHour,byRisk,byAgreement,bySide,lrScore,features};
+}
+function variant(cs:Tagged[],name:string,pred:(c:Tagged)=>boolean){const x=cs.filter(pred);return{name,...stats(x)}}
+
 export function runMultiMotorPortfolioResearch(raw5:any[],raw1:any[]){
   const merged=mergeCandidates(raw5,raw1);
   return{
@@ -88,6 +123,15 @@ export function runMultiMotorPortfolioResearch(raw5:any[],raw1:any[]){
     rawSignals:merged.rawSignals,
     duplicatesRemoved:merged.duplicatesRemoved,
     uniqueSignals:merged.unique.length,
-    metrics:stats(merged.unique)
+    metrics:stats(merged.unique),
+    diagnostics:diagnostics(merged.unique),
+    variants:[
+      variant(merged.unique,"SEM_RISCO_035_05",c=>c.risk/c.entry<=.0035),
+      variant(merged.unique,"SEM_HORAS_12_13_BR",c=>{const h=new Date(c.time-3*3600000).getUTCHours();return h!==12&&h!==13}),
+      variant(merged.unique,"LR72_OU_MOTOR_CONFIRMADO",c=>!c.engines.includes("LIQUIDITY_REVERSAL")||c.score>=72||c.engines.length>1),
+      variant(merged.unique,"EXIGE_BOS_OU_MULTI",c=>c.features.bos||c.engines.length>1),
+      variant(merged.unique,"EXIGE_BOS_DISP_OU_LR72",c=>(c.features.bos&&c.features.disp)||(c.engines.includes("LIQUIDITY_REVERSAL")&&c.score>=72)),
+      variant(merged.unique,"RISCO035_E_LR72_OU_MULTI",c=>c.risk/c.entry<=.0035&&(!c.engines.includes("LIQUIDITY_REVERSAL")||c.score>=72||c.engines.length>1))
+    ]
   };
 }
