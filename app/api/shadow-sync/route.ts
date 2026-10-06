@@ -9,7 +9,9 @@ export const maxDuration=60;
 async function sync(req:NextRequest){
   const expected=process.env.CRON_SECRET;
   const auth=req.headers.get("authorization");
-  if(!expected||auth!=="Bearer "+expected)return NextResponse.json({error:"unauthorized"},{status:401});
+  const cronHeader=req.headers.get("x-cron-secret");
+  const authorized=!!expected&&(auth==="Bearer "+expected||cronHeader===expected);
+  if(!authorized)return NextResponse.json({error:"unauthorized"},{status:401});
   try{
     const health=await shadowHealth();
     const chat=await ensureTelegramChat();
