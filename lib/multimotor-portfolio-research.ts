@@ -110,6 +110,7 @@ function variant(cs:Tagged[],name:string,pred:(c:Tagged)=>boolean){const x=cs.fi
 
 export function runMultiMotorPortfolioResearch(raw5:any[],raw1:any[]){
   const merged=mergeCandidates(raw5,raw1);
+  const finalSignals=merged.unique.filter(c=>(c.features.bos||c.engines.length>1)&&c.risk/c.entry<=.0035);
   return{
     policy:{
       liquidityReversal:"score >= 68",
@@ -117,23 +118,26 @@ export function runMultiMotorPortfolioResearch(raw5:any[],raw1:any[]){
       liquidityContinuation:"score >= 64 + H1/M15 alinhados + BOS + deslocamento",
       dailyLimit:"nenhum",
       dedupe:"mesma direção, até 15 min, entrada dentro de 0,5x do maior risco estrutural",
-      exit:"30% em 2R + 70% buscando 3R"
+      exit:"30% em 2R + 70% buscando 3R",
+      finalQualityGate:"BOS no setup OU concordância de 2+ motores; risco estrutural <= 0,35% do preço",
+      status:"FINAL_V1"
     },
     sourceSignals:merged.source,
     rawSignals:merged.rawSignals,
     duplicatesRemoved:merged.duplicatesRemoved,
-    uniqueSignals:merged.unique.length,
-    metrics:stats(merged.unique),
-    diagnostics:diagnostics(merged.unique),
+    uniqueSignalsBeforeFinalGate:merged.unique.length,
+    finalSignals:finalSignals.length,
+    metrics:stats(finalSignals),
+    diagnostics:diagnostics(finalSignals),
     variants:[
-      variant(merged.unique,"SEM_RISCO_035_05",c=>c.risk/c.entry<=.0035),
-      variant(merged.unique,"SEM_HORAS_12_13_BR",c=>{const h=new Date(c.time-3*3600000).getUTCHours();return h!==12&&h!==13}),
-      variant(merged.unique,"LR72_OU_MOTOR_CONFIRMADO",c=>!c.engines.includes("LIQUIDITY_REVERSAL")||c.score>=72||c.engines.length>1),
-      variant(merged.unique,"EXIGE_BOS_OU_MULTI",c=>c.features.bos||c.engines.length>1),
-      variant(merged.unique,"EXIGE_BOS_DISP_OU_LR72",c=>(c.features.bos&&c.features.disp)||(c.engines.includes("LIQUIDITY_REVERSAL")&&c.score>=72)),
-      variant(merged.unique,"RISCO035_E_LR72_OU_MULTI",c=>c.risk/c.entry<=.0035&&(!c.engines.includes("LIQUIDITY_REVERSAL")||c.score>=72||c.engines.length>1)),
-      variant(merged.unique,"BOS_OU_MULTI_E_RISCO035",c=>(c.features.bos||c.engines.length>1)&&c.risk/c.entry<=.0035),
-      variant(merged.unique,"BOS_OU_MULTI_SEM_FIB",c=>(c.features.bos||c.engines.length>1)&&!c.features.fib)
+      variant(finalSignals,"SEM_RISCO_035_05",c=>c.risk/c.entry<=.0035),
+      variant(finalSignals,"SEM_HORAS_12_13_BR",c=>{const h=new Date(c.time-3*3600000).getUTCHours();return h!==12&&h!==13}),
+      variant(finalSignals,"LR72_OU_MOTOR_CONFIRMADO",c=>!c.engines.includes("LIQUIDITY_REVERSAL")||c.score>=72||c.engines.length>1),
+      variant(finalSignals,"EXIGE_BOS_OU_MULTI",c=>c.features.bos||c.engines.length>1),
+      variant(finalSignals,"EXIGE_BOS_DISP_OU_LR72",c=>(c.features.bos&&c.features.disp)||(c.engines.includes("LIQUIDITY_REVERSAL")&&c.score>=72)),
+      variant(finalSignals,"RISCO035_E_LR72_OU_MULTI",c=>c.risk/c.entry<=.0035&&(!c.engines.includes("LIQUIDITY_REVERSAL")||c.score>=72||c.engines.length>1)),
+      variant(finalSignals,"BOS_OU_MULTI_E_RISCO035",c=>(c.features.bos||c.engines.length>1)&&c.risk/c.entry<=.0035),
+      variant(finalSignals,"BOS_OU_MULTI_SEM_FIB",c=>(c.features.bos||c.engines.length>1)&&!c.features.fib)
     ]
   };
 }
