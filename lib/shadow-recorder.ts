@@ -6,7 +6,7 @@ function required(name:string){
   return v;
 }
 
-async function callShadowWrite(body:any){
+export async function callShadowWrite(body:any){
   const url=required("SUPABASE_URL");
   const anon=required("SUPABASE_ANON_KEY");
   const secret=required("SHADOW_WRITE_SECRET");
@@ -56,3 +56,6 @@ export async function recordShadowSignal(snapshot:LiveFinalSnapshot){
   const result=await callShadowWrite({payload});
   return{recorded:true,signalKey,result};
 }
+
+export async function getBoundTelegramChat(){return callShadowWrite({action:"get_chat"});}
+export async function bindTelegramChat(chat:any){return callShadowWrite({action:"bind_chat",chat});}
