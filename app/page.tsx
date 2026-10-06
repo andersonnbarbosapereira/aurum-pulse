@@ -1,5 +1,6 @@
 import { getLiveFinalSnapshot } from "@/lib/live-final-engine";
 import type { MarketSnapshot } from "@/lib/market";
+import LivePrice from "@/app/live-price";
 
 export const dynamic = "force-dynamic";
 
@@ -79,14 +80,11 @@ export default async function Home() {
       <section className="hero-grid">
         <article className="card price-card">
           <div className="card-head"><span>XAUUSD</span><span className="muted">Gold / US Dollar · {market.epic}</span></div>
-          <div className="price-row">
-            <div className="price">{market.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            <div className="change">{market.changePercent >= 0 ? "+" : ""}{market.changePercent.toFixed(2)}%</div>
-          </div>
+          <LivePrice initial={{price:market.price,changePercent:market.changePercent,bid:null,ask:null,updatedAt:market.updatedAt}} />
           <div className="mini-grid">
             <div><small>Fonte</small><strong>{market.source}</strong></div>
             <div><small>Regime</small><strong>{market.regime}</strong></div>
-            <div><small>Timeframes</small><strong>M15 · H1 · H4</strong></div>
+            <div><small>Timeframes</small><strong>M1 · M5 · M15 · H1</strong></div>
           </div>
         </article>
 
@@ -133,7 +131,7 @@ export default async function Home() {
           <div className="card-head"><span>Tese operacional</span><span className="muted">processo &gt; palpite</span></div>
           <div className="thesis-grid">
             <div><b>01</b><span>Dado real primeiro</span><p>Preço e candles vêm diretamente da Capital.com; sem fonte real, não existe sinal.</p></div>
-            <div><b>02</b><span>Confluência multi-timeframe</span><p>M15, H1 e H4 precisam produzir contexto coerente antes de elevar a convicção.</p></div>
+            <div><b>02</b><span>Confluência multi-timeframe</span><p>M1 confirma o gatilho sobre a estrutura de M5, M15 e H1 antes de elevar a convicção.</p></div>
             <div><b>03</b><span>Risco explícito</span><p>Todo cenário nasce com invalidação e risco definidos antes de qualquer execução.</p></div>
           </div>
         </article>
