@@ -61,3 +61,5 @@ export async function recordShadowSignal(snapshot:LiveFinalSnapshot){
 
 export async function getBoundTelegramChat(){return callShadowWrite({action:"get_chat"});}
 export async function bindTelegramChat(chat:any){return callShadowWrite({action:"bind_chat",chat});}
+
+export async function getShadowDashboard(){return callShadowWrite({action:"get_dashboard"});}
