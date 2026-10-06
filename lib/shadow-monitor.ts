@@ -76,7 +76,8 @@ export async function monitorOpenTrades(snapshot:LiveFinalSnapshot){
       mae=Math.min(mae,adverseR(t,c));
     }
 
-    const managementStart=status==="TP2"&&partialAt?Date.parse(partialAt):Date.parse(t.signal_time);
+    const entrySeen=Date.parse((t as any).first_seen_at||t.signal_time);
+    const managementStart=status==="TP2"&&partialAt?Math.max(entrySeen,Date.parse(partialAt)):entrySeen;
     for(const c of candles.filter((x:Minute)=>x.time>=managementStart)){
       const stop=hitStop(t,c,currentStop);
       const hit2=!partialAt&&hitTarget(t,c,Number(t.target_2r));
