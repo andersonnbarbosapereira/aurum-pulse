@@ -72,8 +72,8 @@ function multiTfLevels(m5:C[],price:number){
   const clusters:Array<typeof points>=[];
   for(const p of points){
     const last=clusters.at(-1);
-    const mean=last?.reduce((s,x)=>s+x.price,0)/(last?.length||1);
-    if(last&&Math.abs(p.price-mean)<=tol)last.push(p);else clusters.push([p]);
+    const mean=last&&last.length?last.reduce((s,x)=>s+x.price,0)/last.length:null;
+    if(last&&mean!==null&&Math.abs(p.price-mean)<=tol)last.push(p);else clusters.push([p]);
   }
   const levels=clusters.map(c=>{
     const tfs=[...new Set(c.map(x=>x.tf))];
@@ -94,7 +94,6 @@ function macroZones(hour:C[],price:number){
   for(const p of pivots(h4).slice(-20))add(p.price,2,"swing H4");
   const now=new Date();
   const utc=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate())/1000;
-  const ms=(t:number)=>t/1000;
   const weekStart=utc-((now.getUTCDay()+6)%7)*86400;
   const prevWeek=hour.filter(c=>c.time/1000>=weekStart-7*86400&&c.time/1000<weekStart);
   if(prevWeek.length){add(Math.max(...prevWeek.map(c=>c.high)),3,"máxima semana anterior");add(Math.min(...prevWeek.map(c=>c.low)),3,"mínima semana anterior");}
@@ -120,7 +119,7 @@ export async function getDecisionContext(){
     getHistoricalPrices(epic,"MINUTE_5",new Date(now.getTime()-72*3600_000),now,1000),
     getHistoricalPrices(epic,"HOUR",new Date(now.getTime()-35*86400_000),now,1000)
   ]);
-  const m5=r5.map(candle).filter((x):x is C=>!!x),hour=rh.map(candle).filter((x):x is C=>!!x);
+  const m5=r5.map((x:any)=>candle(x)).filter((x:C|null):x is C=>!!x),hour=rh.map((x:any)=>candle(x)).filter((x:C|null):x is C=>!!x);
   const frames={M5:tfState(m5),M15:tfState(aggregate(m5,15)),M30:tfState(aggregate(m5,30)),H1:tfState(aggregate(m5,60)),H4:tfState(aggregate(hour,240))};
   const data={updatedAt:new Date().toISOString(),price:quote.price,frames,levels:multiTfLevels(m5,quote.price),macroZones:macroZones(hour,quote.price)};
   cache={at:Date.now(),data}; return data;
