@@ -132,8 +132,7 @@ export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
   }
 
   const rs=reasons(selected),t2=target(selected.side,selected.entry,selected.risk,2),t3=target(selected.side,selected.entry,selected.risk,3);
-  const signalClass:selected["engines"]["length"] extends number ? "PREMIUM"|"PREMIUM+" : never =
-    selected.engines.length>1||selected.score>=80?"PREMIUM+":"PREMIUM";
+  const signalClass: "PREMIUM"|"PREMIUM+" = selected.engines.length>1||selected.score>=80?"PREMIUM+":"PREMIUM";
   const dna:TradeThesisDna={
     version:"FINAL_V1",signalClass,engines:selected.engines,side:selected.side,score:selected.score,
     signalTime:new Date(selected.time).toISOString(),entry:+selected.entry.toFixed(2),originalStop:+selected.stop.toFixed(2),
