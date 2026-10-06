@@ -4,6 +4,7 @@ import { getShadowDashboard } from "@/lib/shadow-recorder";
 import LivePrice from "@/app/live-price";
 import PreparationPanel from "@/app/preparation-panel";
 import DecisionIntelligence from "@/app/decision-intelligence";
+import AutoRefresh from "@/app/auto-refresh";
 
 export const dynamic="force-dynamic";
 
@@ -69,7 +70,7 @@ export default async function Home(){
   try{dashboard=await getShadowDashboard();}catch{}
 
   if(!market||connectionError){
-    return <main className="shell">
+    return <main className="shell"><AutoRefresh />
       <header className="topbar">
         <div><div className="eyebrow">XAUUSD · MARKET INTELLIGENCE</div><h1>Aurum <span>Pulse</span></h1></div>
         <div className="top-actions"><Pill tone="warn">CONEXÃO PENDENTE</Pill><div className="live">Capital.com</div></div>
@@ -109,7 +110,7 @@ export default async function Home(){
     return{id,n:assoc.length,closed:done.length,winRate:done.length?wins/done.length*100:0,sumR,last5};
   });
 
-  return <main className="shell">
+  return <main className="shell"><AutoRefresh />
     <header className="topbar">
       <div>
         <div className="eyebrow">XAUUSD · MARKET INTELLIGENCE</div>
