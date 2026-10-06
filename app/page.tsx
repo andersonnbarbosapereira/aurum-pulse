@@ -123,6 +123,66 @@ export default async function Home(){
       ))}
     </section>
 
+    <section className="section-headline"><div><span className="section-kicker">MAPA DE MERCADO</span><h2>Níveis próximos e zonas de interesse</h2></div><span className="muted">Pivôs M5 · força por toques + recência</span></section>
+    <section className="market-map-grid">
+      <article className="card map-card">
+        <div className="card-head"><span>Suportes próximos</span><span className="muted">abaixo do preço</span></div>
+        <div className="level-stack">
+          {market.marketMap.support.length?market.marketMap.support.map((x)=>(
+            <details className="level-detail" key={"s"+x.price}>
+              <summary><div><strong>{px(x.price)}</strong><span>-{x.distancePct.toFixed(3)}%</span></div><Pill tone={x.strength==="FORTE"?"good":"neutral"}>{x.strength}</Pill></summary>
+              <div className="detail-body"><span>{x.touches} testes</span><span>score {x.score}/100</span><span>último toque {time(x.lastTouch)}</span></div>
+            </details>
+          )):<div className="empty-compact">Nenhum suporte médio/forte próximo identificado.</div>}
+        </div>
+      </article>
+
+      <article className="card zone-card">
+        <div className="card-head"><span>Zonas de interesse</span><span className="muted">demanda / oferta</span></div>
+        <div className="zone-stack">
+          {market.marketMap.interestZones.length?market.marketMap.interestZones.map((z)=>(
+            <details className={"zone-detail "+(z.type==="DEMANDA"?"demand":"supply")} key={z.type+z.center}>
+              <summary>
+                <div><small>{z.type}</small><strong>{px(z.low)} — {px(z.high)}</strong><span>{z.distancePct.toFixed(3)}% do preço</span></div>
+                <Pill tone={z.strength==="FORTE"?"good":"warn"}>{z.strength}</Pill>
+              </summary>
+              <div className="detail-body"><span>centro {px(z.center)}</span><span>score {z.score}/100</span><span>{z.reason}</span></div>
+            </details>
+          )):<div className="empty-compact">Nenhuma zona média/forte próxima identificada.</div>}
+        </div>
+        <details className="method-detail">
+          <summary>Como essas zonas são calculadas?</summary>
+          <p>O Aurum Pulse detecta swings recentes no M5, agrupa preços próximos, conta testes, pondera recência e cria uma faixa ao redor do nível com largura adaptada à volatilidade recente.</p>
+          <div className="detail-body"><span>Range médio M5 {px(market.marketMap.volatility.avgM5Range)}</span><span>Largura da zona {px(market.marketMap.volatility.zoneWidth)}</span></div>
+        </details>
+      </article>
+
+      <article className="card map-card">
+        <div className="card-head"><span>Resistências próximas</span><span className="muted">acima do preço</span></div>
+        <div className="level-stack">
+          {market.marketMap.resistance.length?market.marketMap.resistance.map((x)=>(
+            <details className="level-detail" key={"r"+x.price}>
+              <summary><div><strong>{px(x.price)}</strong><span>+{x.distancePct.toFixed(3)}%</span></div><Pill tone={x.strength==="FORTE"?"good":"neutral"}>{x.strength}</Pill></summary>
+              <div className="detail-body"><span>{x.touches} testes</span><span>score {x.score}/100</span><span>último toque {time(x.lastTouch)}</span></div>
+            </details>
+          )):<div className="empty-compact">Nenhuma resistência média/forte próxima identificada.</div>}
+        </div>
+      </article>
+    </section>
+
+    <section className="accordion-grid">
+      <details className="card info-accordion">
+        <summary><div><span className="section-kicker">DETALHES</span><strong>Como o FINAL_V1 está decidindo agora</strong></div><span>abrir</span></summary>
+        <div className="accordion-body">
+          {market.activeEngines.map((e)=><div key={"d"+e.engine}><strong>{engineName(e.engine)}</strong><span>{e.score}/100 · {e.accepted?"aprovado":"em espera"}</span><p>{e.reason}</p></div>)}
+        </div>
+      </details>
+      <details className="card info-accordion">
+        <summary><div><span className="section-kicker">FORWARD</span><strong>O que entra nas estatísticas LIVE_V2</strong></div><span>abrir</span></summary>
+        <div className="accordion-body single"><p>Somente sinais gerados depois da correção de entrada ao vivo e observação real entram no LIVE_V2. Os dois registros PRE_FIX continuam preservados para diagnóstico, mas ficam fora das métricas oficiais.</p></div>
+      </details>
+    </section>
+
     <section className="content-grid">
       <article className="card setup-card">
         <div className="card-head"><span>Setup / risco</span><span className="muted">{signal?signal.signalClass:"SEM GATILHO"}</span></div>
