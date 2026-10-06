@@ -136,7 +136,7 @@ export async function monitorOpenTrades(snapshot:LiveFinalSnapshot){
       last_ai_action:ai?.action??t.last_ai_action,last_ai_message:ai?.reason??t.last_ai_message,last_ai_at:ai?now:t.last_ai_at,
       closed_at:closedAt
     });
-    results.push({id:t.id,status,event,currentR:+currentR.toFixed(3),mfeR:+mfe.toFixed(3),maeR:+mae.toFixed(3),currentStop,ai});
+    results.push({id:t.id,status,event,currentPrice:snapshot.price,currentR:+currentR.toFixed(3),mfeR:+mfe.toFixed(3),maeR:+mae.toFixed(3),currentStop,ai,previousAiAction:t.last_ai_action,lastTelegramEvent:t.last_telegram_event});
   }
   return results;
 }
