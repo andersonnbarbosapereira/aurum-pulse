@@ -131,7 +131,9 @@ export function runMultiMotorPortfolioResearch(raw5:any[],raw1:any[]){
       variant(merged.unique,"LR72_OU_MOTOR_CONFIRMADO",c=>!c.engines.includes("LIQUIDITY_REVERSAL")||c.score>=72||c.engines.length>1),
       variant(merged.unique,"EXIGE_BOS_OU_MULTI",c=>c.features.bos||c.engines.length>1),
       variant(merged.unique,"EXIGE_BOS_DISP_OU_LR72",c=>(c.features.bos&&c.features.disp)||(c.engines.includes("LIQUIDITY_REVERSAL")&&c.score>=72)),
-      variant(merged.unique,"RISCO035_E_LR72_OU_MULTI",c=>c.risk/c.entry<=.0035&&(!c.engines.includes("LIQUIDITY_REVERSAL")||c.score>=72||c.engines.length>1))
+      variant(merged.unique,"RISCO035_E_LR72_OU_MULTI",c=>c.risk/c.entry<=.0035&&(!c.engines.includes("LIQUIDITY_REVERSAL")||c.score>=72||c.engines.length>1)),
+      variant(merged.unique,"BOS_OU_MULTI_E_RISCO035",c=>(c.features.bos||c.engines.length>1)&&c.risk/c.entry<=.0035),
+      variant(merged.unique,"BOS_OU_MULTI_SEM_FIB",c=>(c.features.bos||c.engines.length>1)&&!c.features.fib)
     ]
   };
 }
