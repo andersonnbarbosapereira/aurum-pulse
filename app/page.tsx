@@ -2,6 +2,7 @@ import { getLiveFinalSnapshot } from "@/lib/live-final-engine";
 import type { MarketSnapshot } from "@/lib/market";
 import { getShadowDashboard } from "@/lib/shadow-recorder";
 import LivePrice from "@/app/live-price";
+import PreparationPanel from "@/app/preparation-panel";
 
 export const dynamic="force-dynamic";
 
@@ -143,6 +144,9 @@ export default async function Home(){
         </div>
       </article>
     </section>
+
+    <section className="section-headline"><div><span className="section-kicker">PREPARAÇÃO M5</span><h2>Como o mercado está se aproximando de um setup</h2></div><span className="muted">Informativo · não altera o FINAL_V1</span></section>
+    <PreparationPanel initial={market.preparation} />
 
     <section className="section-headline"><div><span className="section-kicker">MOTORES</span><h2>O que está sustentando — ou bloqueando — uma entrada</h2></div><span className="muted">Atualização estrutural no ciclo do motor</span></section>
     <section className="engine-grid">
