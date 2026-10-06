@@ -1,6 +1,6 @@
 import { NextRequest,NextResponse } from "next/server";
 import { getLiveFinalSnapshot } from "@/lib/live-final-engine";
-import { recordShadowSignal,shadowHealth } from "@/lib/shadow-recorder";
+import { recordShadowSignal,shadowHealth,setSystemHealth } from "@/lib/shadow-recorder";
 import { ensureTelegramChat,sendTelegramSignal,sendTelegramManagement } from "@/lib/telegram-bot";
 import { monitorOpenTrades,updateShadowTrade } from "@/lib/shadow-monitor";
 
@@ -40,6 +40,15 @@ async function sync(req:NextRequest){
       }
     }
 
+    await setSystemHealth({
+      cron_at:new Date().toISOString(),
+      capital_ok:true,
+      telegram_bound:!!chat.chatId,
+      shadow_ok:health?.ok===true,
+      last_decision:snapshot.dna?(snapshot.dna.side+":"+snapshot.dna.signalClass):"AGUARDAR",
+      last_error:null
+    });
+
     return NextResponse.json({
       ok:true,
       engineVersion:snapshot.engineVersion,
@@ -55,6 +64,7 @@ async function sync(req:NextRequest){
       ...write
     },{headers:{"X-Robots-Tag":"noindex"}});
   }catch(error){
+    try{await setSystemHealth({cron_at:new Date().toISOString(),capital_ok:false,shadow_ok:false,last_error:error instanceof Error?error.message:"UNKNOWN_ERROR"});}catch{}
     return NextResponse.json({ok:false,error:"shadow_sync_failed",diagnostic:error instanceof Error?error.message:"UNKNOWN_ERROR"},{status:502});
   }
 }
