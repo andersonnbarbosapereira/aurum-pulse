@@ -1,4 +1,3 @@
-import type { HistCandle } from "@/lib/histdata";
 type Raw=any; type Side=1|-1;
 type C={time:number;open:number;high:number;low:number;close:number};
 type T={time:number;date:string;side:Side;entry:number;exit:number;range:number;grossRtn:number;netRtn:number;costPoints:number};
@@ -16,3 +15,4 @@ export function runNyLargeRangeContinuation(raw:Raw[]){
  for(const win of windows)for(const cost of costs){const ts:T[]=[];const hist:number[]=[];for(const d of days){const threshold=hist.length>=win?median(hist.slice(-win)):NaN;if(Number.isFinite(threshold)&&d.range>=threshold){const gross=(d.exit-d.entry)*d.side,net=gross-cost,den=d.entry;ts.push({time:d.time,date:d.date,side:d.side,entry:d.entry,exit:d.exit,range:d.range,grossRtn:gross/den,netRtn:net/den,costPoints:cost})}hist.push(d.range)}variants[`MED${win}_COST${String(cost).replace(".","_")}PT`]=metrics(ts)}
  const core=variants.MED60_COST0_5PT,stress=variants.MED60_COST1_5PT;
  return{status:"ok",model:"NY_LARGE_RANGE_CONTINUATION_CAUSAL_V1",days:days.length,from:days[0]?.date,to:days.at(-1)?.date,rules:{signal:"08:30-09:00 NY directional impulse",gate:"opening 30m high-low >= causal median of previous 60 trading days",entry:"09:00 NY first M15 open",exit:"last M15 close before 16:00 NY",costs:"0.5 / 1.0 / 1.5 XAU points round-trip deducted",noOptimization:"MED60 is pre-frozen; MED40/90 are neighbor robustness checks only"},variants,pass:core.trades>=80&&core.avgTradeBps>1&&core.profitFactor>1.08&&stress.avgTradeBps>0,warning:"Research only. No stop/target geometry yet; this tests whether the directional edge survives point costs before spending complexity on execution."}
+}
