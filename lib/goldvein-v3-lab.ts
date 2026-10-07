@@ -201,7 +201,7 @@ function metrics(trades: Trade[], initialEquity: number, finalEquity: number, sp
   };
 }
 
-function runStatic(a: Candle[], costScale = 1) {
+function runStatic(a: Candle[], costScale = 1, forcedSpread: number | null = null, forcedSlippage: number | null = null) {
   const atr = wilderAtr(a, 14);
   const z = bollingerZ(a, 20);
   const vwap = sessionVwap(a);
@@ -209,13 +209,13 @@ function runStatic(a: Candle[], costScale = 1) {
   const initialEquity = 10_000;
   let equity = initialEquity;
   const riskPerTrade = 0.005;
-  const slippage = 0.02 * costScale;
+  const slippage = (forcedSlippage ?? 0.02) * costScale;
   const minStop = 1.0;
   const stopAtr = 1.5;
   const holdBars = 24;
   const momentumExitBars = 3;
   const zEntry = 1.5;
-  const minVwapDistance = 2.0 * 0.08 * costScale;
+  const minVwapDistance = 2.0 * 0.08;
 
   const targetPos = new Int8Array(a.length);
   const signalStop = new Array(a.length).fill(NaN);
@@ -274,7 +274,7 @@ function runStatic(a: Candle[], costScale = 1) {
   let riskBudget = 0;
 
   const closeTrade = (i: number, rawExit: number, reason: string) => {
-    const halfSpread = 0.5 * Math.max(0, a[i].spread) * costScale;
+    const halfSpread = 0.5 * Math.max(0, forcedSpread ?? a[i].spread) * costScale;
     const effectiveExit = rawExit - (halfSpread + slippage);
     const pnl = (effectiveExit - entry) * size;
     equity += pnl;
@@ -335,7 +335,7 @@ function runStatic(a: Candle[], costScale = 1) {
       const nextLocal = brokerLocal(next.time);
       if (nextLocal.weekday === 5 && nextLocal.hour >= 21) continue;
 
-      const halfSpread = 0.5 * Math.max(0, next.spread) * costScale;
+      const halfSpread = 0.5 * Math.max(0, forcedSpread ?? next.spread) * costScale;
       const effectiveEntry = next.open + halfSpread + slippage;
       let newStop = signalStop[i];
       if (!Number.isFinite(newStop) || Math.abs(effectiveEntry - newStop) < minStop) {
@@ -373,16 +373,17 @@ export function runGoldveinV3Lab(raw: Raw[]) {
   const candles = prepare(raw);
   if (candles.length < 5000) return { status: "insufficient_data", candles: candles.length };
 
-  const base = runStatic(candles, 1);
-  const stress2 = runStatic(candles, 2);
-  const stress3 = runStatic(candles, 3);
+  const zeroCost = runStatic(candles, 0, 0, 0);
+  const sourceCost = runStatic(candles, 1, 0.04, 0.02);
+  const capitalCost = runStatic(candles, 1, null, 0.02);
+  const capital2x = runStatic(candles, 2, null, 0.02);
 
   const pass =
-    base.trades >= 12 &&
-    base.avgR > 0.03 &&
-    base.profitFactor >= 1.08 &&
-    base.positiveMonths >= 0.55 &&
-    stress2.avgR > 0;
+    capitalCost.trades >= 12 &&
+    capitalCost.avgR > 0.03 &&
+    capitalCost.profitFactor >= 1.08 &&
+    capitalCost.positiveMonths >= 0.55 &&
+    capital2x.avgR > 0;
 
   return {
     status: "ok",
@@ -399,13 +400,14 @@ export function runGoldveinV3Lab(raw: Raw[]) {
       exits: "entry VWAP target OR signal exit after VWAP reclaim / 3 consecutive lower closes / 24 bars",
       fill: "next M5 open",
       risk: "0.5% equity per trade",
-      costs: "Capital historical bid/ask spread + $0.02 slippage/side; stress scales both spread and slippage",
+      costs: "ZERO; source-model $0.04 spread+$0.02 slip/side; Capital historical bid/ask+$0.02 slip/side; Capital 2x stress",
       note: "Static modal V3 parameters only; no parameter optimization on Capital data."
     },
     variants: {
-      BASE: base,
-      COST_2X: stress2,
-      COST_3X: stress3,
+      ZERO_COST: zeroCost,
+      SOURCE_COST_0_04: sourceCost,
+      CAPITAL_COST: capitalCost,
+      CAPITAL_COST_2X: capital2x,
     },
     pass,
     verdict: pass ? "CANDIDATE_FOR_CROSS_WINDOW_VALIDATION" : "REJECT_OR_KEEP_IN_LAB",
