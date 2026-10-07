@@ -26,7 +26,9 @@ function unzipCsv(buf:Buffer){
   }
   throw new Error("HISTDATA_CSV_NOT_FOUND");
 }
-async function downloadYear(year:number){
+export async function fetchHistDataYear(pair:string,year:number){
+  if(pair.toUpperCase()!=="XAUUSD")throw new Error("HISTDATA_ONLY_XAUUSD_IN_LAB");
+
   const referer=`https://www.histdata.com/download-free-forex-historical-data/?/ascii/1-minute-bar-quotes/xauusd/${year}`;
   const page=await fetch(referer,{headers:{"User-Agent":"Mozilla/5.0"},cache:"no-store"});
   if(!page.ok)throw new Error(`HISTDATA_PAGE_${page.status}`);
@@ -61,9 +63,11 @@ function daily(rows:HistCandle[]){
   const flush=()=>{if(!g.length)return;const d=new Date(g[0].time);out.push({time:Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()),open:g[0].open,high:Math.max(...g.map(x=>x.high)),low:Math.min(...g.map(x=>x.low)),close:g[g.length-1].close,volume:g.reduce((s,x)=>s+x.volume,0)});g=[]};
   for(const c of rows){const d=new Date(c.time),k=`${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;if(k!==key){flush();key=k}g.push(c)}flush();return out;
 }
+export function toCapitalLikeRaw(rows:HistCandle[]){return rows.map(capitalShape)}
+export function histDataM1ToM15(csv:string){const rows=csv.split(/\r?\n/).map(parseLine).filter((x):x is HistCandle=>!!x).sort((a,b)=>a.time-b.time);return aggregate(rows,15)}
 function capitalShape(c:HistCandle){const v=(n:number)=>({bid:n,ask:n});return{snapshotTimeUTC:new Date(c.time).toISOString(),openPrice:v(c.open),highPrice:v(c.high),lowPrice:v(c.low),closePrice:v(c.close),lastTradedVolume:c.volume}}
 export async function getHistDataForLab(year:number){
-  const [prev,cur]=await Promise.all([downloadYear(year-1),downloadYear(year)]);
+  const [prev,cur]=await Promise.all([fetchHistDataYear("XAUUSD",year-1),fetchHistDataYear("XAUUSD",year)]);
   const rows=(prev+"\n"+cur).split(/\r?\n/).map(parseLine).filter((x):x is HistCandle=>!!x).sort((a,b)=>a.time-b.time);
   const m5=aggregate(rows,5),d=daily(rows);
   return{m5:m5.map(capitalShape),daily:d.map(capitalShape),rawMinutes:rows.length,from:new Date(rows[0].time).toISOString(),to:new Date(rows.at(-1)!.time).toISOString()};
