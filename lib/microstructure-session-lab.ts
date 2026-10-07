@@ -28,6 +28,13 @@ export function runMicrostructureSessionLab(raw:Raw[],evalDays=180){
     variants["MAP_"+code+"_VOLMED_2BPS"]=metrics(build(ss,evalStart,.0002,true,map),span);
   }
   const ranking=Object.entries(variants).map(([id,m]:any)=>({id,...m})).sort((x,y)=>y.dailySharpe-x.dailySharpe);
+  const frozenMap:MapSpec={ASIA:"M",EUROPE:"R",US:"R"};
+  const frozenCostStress={
+    COST_2BPS:metrics(build(ss,evalStart,.0002,true,frozenMap),span),
+    COST_4BPS:metrics(build(ss,evalStart,.0004,true,frozenMap),span),
+    COST_6BPS:metrics(build(ss,evalStart,.0006,true,frozenMap),span),
+    COST_10BPS:metrics(build(ss,evalStart,.0010,true,frozenMap),span)
+  };
   return{
     status:"ok",
     model:"MICROSTRUCTURE_SESSION_MAP_GRID_V2",
@@ -47,6 +54,13 @@ export function runMicrostructureSessionLab(raw:Raw[],evalDays=180){
     },
     variants,
     ranking,
+    frozenCandidate:{
+      id:"MRR_VOLMED_V1",
+      map:"Asia momentum; Europe reversal; US reversal",
+      selectedAfter2019_2023Development:true,
+      gate:"abs first-30m return >= causal rolling median of prior up to 60 same-session observations; min 30",
+      costStress:frozenCostStress
+    },
     warning:"Eight structural session-direction mappings x optional causal volatility gate. Development grid only; winner must be frozen across multiple Capital windows before untouched HistData testing."
   };
 }
