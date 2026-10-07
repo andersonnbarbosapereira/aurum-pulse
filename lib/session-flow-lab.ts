@@ -183,6 +183,8 @@ function buildAdaptiveVariants(sessions: SessionBar[], evalStart: number, cost =
     SIGNED_SESSION20_TREND20: [],
     SIGNED_DUAL20_TREND20: [],
     ROUTER20: [],
+    ROUTER20_EDGE60: [],
+    ROUTER20_EDGE120: [],
     ROUTER40: [],
     ROUTER20_BLEND60: []
   };
@@ -205,6 +207,7 @@ function buildAdaptiveVariants(sessions: SessionBar[], evalStart: number, cost =
     EUROPE: { cont: [], rev: [] },
     US: { cont: [], rev: [] }
   };
+  const router20Realized: number[] = [];
   let baseCandidates = 0;
 
   for (let i = 1; i < sessions.length; i++) {
@@ -237,9 +240,19 @@ function buildAdaptiveVariants(sessions: SessionBar[], evalStart: number, cost =
       };
 
       const s20c = rs.cont.slice(-20), s20r = rs.rev.slice(-20);
-      if (s20c.length >= 8 && cur.end >= evalStart) {
+      if (s20c.length >= 8) {
         const side = choose(mean(s20c), mean(s20r));
-        if (side) variants.ROUTER20.push(makeRouterTrade(side));
+        if (side) {
+          const candidate = makeRouterTrade(side);
+          const gate60 = router20Realized.slice(-60);
+          const gate120 = router20Realized.slice(-120);
+          if (cur.end >= evalStart) {
+            variants.ROUTER20.push(candidate);
+            if (gate60.length >= 20 && mean(gate60) > 0) variants.ROUTER20_EDGE60.push(candidate);
+            if (gate120.length >= 40 && mean(gate120) > 0) variants.ROUTER20_EDGE120.push(candidate);
+          }
+          router20Realized.push(candidate.netRet);
+        }
       }
 
       const s40c = rs.cont.slice(-40), s40r = rs.rev.slice(-40);
@@ -430,6 +443,8 @@ export function runSessionFlowLab(raw: Raw[], evalDays = 180) {
       SIGNED_SESSION20_TREND20: "SIGNED_TREND20 + prior 8-20 signed opportunities in same target session must have positive net mean",
       SIGNED_DUAL20_TREND20: "SIGNED_TREND20 + both global and session-specific causal edge gates",
       ROUTER20: "per target session, choose continuation or reversal from the prior 8-20 realized transitions; abstain if both net means <= 0",
+      ROUTER20_EDGE60: "ROUTER20 + causal health gate: prior 20-60 hypothetical ROUTER20 outcomes must have positive net mean",
+      ROUTER20_EDGE120: "ROUTER20 + slower causal health gate: prior 40-120 hypothetical ROUTER20 outcomes must have positive net mean",
       ROUTER40: "same causal continuation/reversal router using prior 15-40 transitions per target session",
       ROUTER20_BLEND60: "70% same-session 20-transition edge + 30% global 60-transition edge; choose continuation/reversal or abstain"
     },
