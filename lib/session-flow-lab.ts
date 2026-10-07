@@ -174,10 +174,18 @@ function buildAdaptiveVariants(sessions: SessionBar[], evalStart: number, cost =
     EDGE60: [],
     EDGE120: [],
     TREND20: [],
-    EDGE60_TREND20: []
+    EDGE60_TREND20: [],
+    EDGE20_TREND20: [],
+    SESSION20_TREND20: [],
+    DUAL20_TREND20: []
   };
 
   const history: number[] = [];
+  const sessionHistory: Record<SessionName, number[]> = {
+    ASIA: [],
+    EUROPE: [],
+    US: []
+  };
   let baseCandidates = 0;
 
   for (let i = 1; i < sessions.length; i++) {
@@ -197,10 +205,14 @@ function buildAdaptiveVariants(sessions: SessionBar[], evalStart: number, cost =
       netRet: net
     };
 
+    const h20 = history.slice(-20);
     const h60 = history.slice(-60);
     const h120 = history.slice(-120);
+    const sh20 = sessionHistory[cur.session].slice(-20);
+    const edge20 = h20.length >= 12 && mean(h20) > 0;
     const edge60 = h60.length >= 30 && mean(h60) > 0;
     const edge120 = h120.length >= 60 && mean(h120) > 0;
+    const session20 = sh20.length >= 8 && mean(sh20) > 0;
     const trend20 = i >= 20 && prev.close > sessions[i - 20].close;
 
     if (cur.end >= evalStart) {
@@ -209,9 +221,13 @@ function buildAdaptiveVariants(sessions: SessionBar[], evalStart: number, cost =
       if (edge120) variants.EDGE120.push(t);
       if (trend20) variants.TREND20.push(t);
       if (edge60 && trend20) variants.EDGE60_TREND20.push(t);
+      if (edge20 && trend20) variants.EDGE20_TREND20.push(t);
+      if (session20 && trend20) variants.SESSION20_TREND20.push(t);
+      if (edge20 && session20 && trend20) variants.DUAL20_TREND20.push(t);
     }
 
     history.push(net);
+    sessionHistory[cur.session].push(net);
   }
 
   return { variants, baseCandidates };
@@ -311,7 +327,10 @@ export function runSessionFlowLab(raw: Raw[], evalDays = 180) {
       EDGE60: "base + prior 30-60 base opportunities must have positive net mean; current outcome never used",
       EDGE120: "base + prior 60-120 base opportunities must have positive net mean; current outcome never used",
       TREND20: "base + previous session close above close 20 sessions earlier",
-      EDGE60_TREND20: "EDGE60 and TREND20 together"
+      EDGE60_TREND20: "EDGE60 and TREND20 together",
+      EDGE20_TREND20: "fast causal regime gate: prior 12-20 base opportunities positive + TREND20",
+      SESSION20_TREND20: "session-specific gate: prior 8-20 opportunities in the same target session positive + TREND20",
+      DUAL20_TREND20: "EDGE20 and SESSION20 and TREND20 together; no current outcome used"
     },
     bySession,
     variants,
