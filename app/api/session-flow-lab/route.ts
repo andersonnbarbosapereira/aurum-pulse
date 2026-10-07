@@ -51,14 +51,14 @@ async function fetchM15(epic: string, start: Date, end: Date) {
 export async function GET(req: Request) {
   try {
     const u = new URL(req.url);
-    const offset = Math.max(0, Math.min(540, Number(u.searchParams.get("offset") || 0)));
+    const offset = Math.max(0, Math.min(900, Number(u.searchParams.get("offset") || 0)));
     const epic = await resolveGoldEpic();
     const end = new Date(Date.now() - offset * 86_400_000);
-    const start = new Date(end.getTime() - 180 * 86_400_000);
+    const start = new Date(end.getTime() - 270 * 86_400_000);
     const m15 = await fetchM15(epic, start, end);
 
     return NextResponse.json(
-      { mode: "session-flow-lab", source: "Capital.com", epic, offsetDays: offset, ...runSessionFlowLab(m15) },
+      { mode: "session-flow-adaptive-lab", source: "Capital.com", epic, offsetDays: offset, ...runSessionFlowLab(m15, 180) },
       { headers: { "X-Robots-Tag": "noindex", "Cache-Control": "no-store" } }
     );
   } catch (e) {
