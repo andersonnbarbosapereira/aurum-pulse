@@ -149,6 +149,23 @@ function buildPreparation(raw5:any[],raw1:any[],specs:Array<{engine:Engine;thres
   };
 }
 
+function contextConfidence(preparation:LiveFinalSnapshot["preparation"], conflict=false){
+  const rows=[...(preparation.engines||[])].sort((a,b)=>b.preparation-a.preparation);
+  if(!rows.length)return 0;
+  const best=rows[0];
+  const sameSide=rows.filter(x=>x.side===best.side);
+  const weighted=
+    (rows[0]?.preparation??0)*0.62+
+    (rows[1]?.preparation??0)*0.25+
+    (rows[2]?.preparation??0)*0.13;
+  const agreementBonus=sameSide.length>=3?7:sameSide.length===2?4:0;
+  const m1Bonus=sameSide.filter(x=>x.m1Confirmed).length>=2?4:best.m1Confirmed?2:0;
+  const mandatoryBonus=sameSide.some(x=>x.mandatoryOk)?3:0;
+  let value=Math.round(weighted+agreementBonus+m1Bonus+mandatoryBonus);
+  if(conflict)value=Math.min(value,45);
+  return Math.max(5,Math.min(95,value));
+}
+
 function buildMarketMap(raw:any[],price:number){
   const candles=raw.map(mapCandle).filter((x):x is MapCandle=>!!x).slice(-360);
   const ranges=candles.slice(-60).map(c=>c.high-c.low).filter(x=>x>0);
@@ -236,7 +253,7 @@ export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
   if(!selected){
     const conflict=sides.size>1;
     return{
-      symbol:"XAUUSD",price:quote.price,changePercent:quote.changePercent,bias:"WAIT",confidence:conflict?35:50,
+      symbol:"XAUUSD",price:quote.price,changePercent:quote.changePercent,bias:"WAIT",confidence:contextConfidence(preparation,conflict),
       session:"Mercado global",regime:"TRANSITION",
       structure:conflict?"Motores produziram direções conflitantes; o FINAL_V1 aguarda resolução.":"Nenhuma oportunidade passou agora pelo portão FINAL_V1: BOS ou concordância multimotor + risco estrutural ≤0,35%.",
       setup:{entryZone:[quote.price,quote.price],stop:quote.price,target1:quote.price,target2:quote.price,rr:0},
@@ -257,7 +274,7 @@ export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
         ?`Setup válido, mas preço atual afastou ${deviationR.toFixed(2)}R da entrada estrutural; não perseguir preço.`
         :"Risco estrutural ao preço atual excede 0,35%.";
     return{
-      symbol:"XAUUSD",price:quote.price,changePercent:quote.changePercent,bias:"WAIT",confidence:45,
+      symbol:"XAUUSD",price:quote.price,changePercent:quote.changePercent,bias:"WAIT",confidence:contextConfidence(preparation,false),
       session:"Mercado global",regime:"TRANSITION",
       structure:reason,
       setup:{entryZone:[quote.price,quote.price],stop:selected.stop,target1:quote.price,target2:quote.price,rr:0},
@@ -280,7 +297,8 @@ export async function getLiveFinalSnapshot():Promise<LiveFinalSnapshot>{
     thesis:[...rs,`timing ao vivo: desvio ${deviationR.toFixed(2)}R`],
     invalidation:`Fechamento/continuidade além do stop estrutural ${selected.stop.toFixed(2)} ou quebra objetiva da tese monitorada pela IA.`
   };
-  const confidence=Math.min(95,Math.round(55+Math.min(25,(selected.score-68)*1.2)+(selected.engines.length>1?10:0)+(selected.features.bos&&selected.features.disp?8:0)));
+  const signalStrength=Math.min(95,Math.round(55+Math.min(25,(selected.score-68)*1.2)+(selected.engines.length>1?10:0)+(selected.features.bos&&selected.features.disp?8:0)));
+  const confidence=Math.max(contextConfidence(preparation,false),signalStrength);
   return{
     symbol:"XAUUSD",price:quote.price,changePercent:quote.changePercent,bias:selected.side,confidence,
     session:"Mercado global",regime:selected.engines.includes("LIQUIDITY_REVERSAL")&&selected.engines.length===1?"TRANSITION":"TREND",
