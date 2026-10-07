@@ -18,7 +18,11 @@ export async function GET(req: Request) {
 
     const frozen = {
       ROUTER20: lab.variants?.ROUTER20 ?? null,
-      ROUTER20_BLEND60: lab.variants?.ROUTER20_BLEND60 ?? null
+      ROUTER20_BLEND60: lab.variants?.ROUTER20_BLEND60 ?? null,
+      ROUTER20_EDGE60: lab.variants?.ROUTER20_EDGE60 ?? null,
+      EDGE60_TREND20: lab.variants?.EDGE60_TREND20 ?? null,
+      SESSION20_TREND20: lab.variants?.SESSION20_TREND20 ?? null,
+      DUAL20_TREND20: lab.variants?.DUAL20_TREND20 ?? null
     };
 
     return NextResponse.json({
@@ -31,7 +35,7 @@ export async function GET(req: Request) {
       candlesM15: data.candlesM15.length,
       evaluationFrom: lab.evaluationFrom,
       to: lab.to,
-      frozenBeforeHoldout: ["ROUTER20", "ROUTER20_BLEND60"],
+      capitalSelectedCandidates: ["ROUTER20", "ROUTER20_BLEND60", "ROUTER20_EDGE60", "EDGE60_TREND20", "SESSION20_TREND20", "DUAL20_TREND20"],
       cost: lab.cost,
       results: frozen,
       holdoutGate: {
@@ -44,7 +48,27 @@ export async function GET(req: Request) {
           !!frozen.ROUTER20_BLEND60 &&
           frozen.ROUTER20_BLEND60.totalReturnPct > 0 &&
           frozen.ROUTER20_BLEND60.profitFactor >= 1.05 &&
-          frozen.ROUTER20_BLEND60.avgTradeBps > 0
+          frozen.ROUTER20_BLEND60.avgTradeBps > 0,
+        ROUTER20_EDGE60:
+          !!frozen.ROUTER20_EDGE60 &&
+          frozen.ROUTER20_EDGE60.totalReturnPct > 0 &&
+          frozen.ROUTER20_EDGE60.profitFactor >= 1.08 &&
+          frozen.ROUTER20_EDGE60.avgTradeBps > 0,
+        EDGE60_TREND20:
+          !!frozen.EDGE60_TREND20 &&
+          frozen.EDGE60_TREND20.totalReturnPct > 0 &&
+          frozen.EDGE60_TREND20.profitFactor >= 1.15 &&
+          frozen.EDGE60_TREND20.avgTradeBps > 0,
+        SESSION20_TREND20:
+          !!frozen.SESSION20_TREND20 &&
+          frozen.SESSION20_TREND20.totalReturnPct > 0 &&
+          frozen.SESSION20_TREND20.profitFactor >= 1.15 &&
+          frozen.SESSION20_TREND20.avgTradeBps > 0,
+        DUAL20_TREND20:
+          !!frozen.DUAL20_TREND20 &&
+          frozen.DUAL20_TREND20.totalReturnPct > 0 &&
+          frozen.DUAL20_TREND20.profitFactor >= 1.15 &&
+          frozen.DUAL20_TREND20.avgTradeBps > 0
       },
       warning: "Untouched pre-2024 holdout. Do not retune these candidates after inspecting this result; use additional older years only as confirmation with the same frozen rules."
     }, {
