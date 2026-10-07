@@ -217,6 +217,10 @@ function buildAdaptiveVariants(sessions: SessionBar[], evalStart: number, cost =
   return { variants, baseCandidates };
 }
 
+function withCost(trades: Trade[], cost: number) {
+  return trades.map((t) => ({ ...t, netRet: t.grossRet - cost }));
+}
+
 function autocorr(xs: number[]) {
   if (xs.length < 3) return 0;
   const a = xs.slice(1);
@@ -265,6 +269,34 @@ export function runSessionFlowLab(raw: Raw[], evalDays = 180) {
     .map(([id, m]: any) => ({ id, ...m }))
     .sort((a, b) => b.dailySharpe - a.dailySharpe);
 
+  const frozenId = "EDGE60_TREND20";
+  const frozenTrades = built.variants.EDGE60_TREND20;
+
+  const costStress = {
+    COST_2BPS: metrics(withCost(frozenTrades, 0.0002), evalDays),
+    COST_4BPS: metrics(withCost(frozenTrades, 0.0004), evalDays),
+    COST_6BPS: metrics(withCost(frozenTrades, 0.0006), evalDays),
+    COST_10BPS: metrics(withCost(frozenTrades, 0.0010), evalDays)
+  };
+
+  const frozenBySession: any = {};
+  for (const s of ["ASIA", "EUROPE", "US"] as SessionName[]) {
+    frozenBySession[s] = metrics(frozenTrades.filter((t) => t.session === s), evalDays);
+  }
+
+  const thirds: any[] = [];
+  const thirdMs = (evalDays * 86_400_000) / 3;
+  for (let k = 0; k < 3; k++) {
+    const lo = evalStart + k * thirdMs;
+    const hi = k === 2 ? lastTime + 1 : evalStart + (k + 1) * thirdMs;
+    const slice = frozenTrades.filter((t) => t.time >= lo && t.time < hi);
+    thirds.push({
+      from: new Date(lo).toISOString(),
+      to: new Date(Math.min(hi, lastTime)).toISOString(),
+      ...metrics(slice, evalDays / 3)
+    });
+  }
+
   return {
     status: "ok",
     model: "SESSION_FLOW_ADAPTIVE_V2",
@@ -284,6 +316,13 @@ export function runSessionFlowLab(raw: Raw[], evalDays = 180) {
     bySession,
     variants,
     ranking,
+    frozenCandidate: {
+      id: frozenId,
+      selectedAfterDevelopment: true,
+      costStress,
+      bySession: frozenBySession,
+      thirds
+    },
     warning: "Adaptive gates use only observations available before each decision. Development ranking still creates multiple-testing risk; any selected gate must be frozen before older holdout windows are inspected."
   };
 }
