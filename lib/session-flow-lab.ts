@@ -181,7 +181,10 @@ function buildAdaptiveVariants(sessions: SessionBar[], evalStart: number, cost =
     SIGNED_TREND20: [],
     SIGNED_EDGE20_TREND20: [],
     SIGNED_SESSION20_TREND20: [],
-    SIGNED_DUAL20_TREND20: []
+    SIGNED_DUAL20_TREND20: [],
+    ROUTER20: [],
+    ROUTER40: [],
+    ROUTER20_BLEND60: []
   };
 
   const history: number[] = [];
@@ -196,6 +199,12 @@ function buildAdaptiveVariants(sessions: SessionBar[], evalStart: number, cost =
     EUROPE: [],
     US: []
   };
+  const routerGlobal = { cont: [] as number[], rev: [] as number[] };
+  const routerSession: Record<SessionName, { cont: number[]; rev: number[] }> = {
+    ASIA: { cont: [], rev: [] },
+    EUROPE: { cont: [], rev: [] },
+    US: { cont: [], rev: [] }
+  };
   let baseCandidates = 0;
 
   for (let i = 1; i < sessions.length; i++) {
@@ -207,6 +216,51 @@ function buildAdaptiveVariants(sessions: SessionBar[], evalStart: number, cost =
       ? (prev.close > sessions[i - 20].close ? 1 : prev.close < sessions[i - 20].close ? -1 : 0)
       : 0;
     const prevSide: -1 | 0 | 1 = prev.ret > 0 ? 1 : prev.ret < 0 ? -1 : 0;
+
+    if (prevSide !== 0) {
+      const contNet = cur.ret * prevSide - cost;
+      const revNet = -cur.ret * prevSide - cost;
+      const rs = routerSession[cur.session];
+
+      const makeRouterTrade = (side: -1 | 1): Trade => ({
+        time: cur.end,
+        session: cur.session,
+        side,
+        grossRet: cur.ret * side,
+        netRet: cur.ret * side - cost
+      });
+
+      const choose = (contScore: number, revScore: number) => {
+        const best = Math.max(contScore, revScore);
+        if (!(best > 0)) return 0 as -1 | 0 | 1;
+        return (contScore >= revScore ? prevSide : -prevSide) as -1 | 1;
+      };
+
+      const s20c = rs.cont.slice(-20), s20r = rs.rev.slice(-20);
+      if (s20c.length >= 8 && cur.end >= evalStart) {
+        const side = choose(mean(s20c), mean(s20r));
+        if (side) variants.ROUTER20.push(makeRouterTrade(side));
+      }
+
+      const s40c = rs.cont.slice(-40), s40r = rs.rev.slice(-40);
+      if (s40c.length >= 15 && cur.end >= evalStart) {
+        const side = choose(mean(s40c), mean(s40r));
+        if (side) variants.ROUTER40.push(makeRouterTrade(side));
+      }
+
+      const g60c = routerGlobal.cont.slice(-60), g60r = routerGlobal.rev.slice(-60);
+      if (s20c.length >= 8 && g60c.length >= 30 && cur.end >= evalStart) {
+        const contScore = mean(s20c) * 0.7 + mean(g60c) * 0.3;
+        const revScore = mean(s20r) * 0.7 + mean(g60r) * 0.3;
+        const side = choose(contScore, revScore);
+        if (side) variants.ROUTER20_BLEND60.push(makeRouterTrade(side));
+      }
+
+      routerGlobal.cont.push(contNet);
+      routerGlobal.rev.push(revNet);
+      rs.cont.push(contNet);
+      rs.rev.push(revNet);
+    }
 
     if (trendSide !== 0 && prevSide === trendSide) {
       const signedNet = cur.ret * trendSide - cost;
@@ -374,7 +428,10 @@ export function runSessionFlowLab(raw: Raw[], evalDays = 180) {
       SIGNED_TREND20: "bidirectional: trade only when previous session return agrees with 20-session trend direction",
       SIGNED_EDGE20_TREND20: "SIGNED_TREND20 + prior 12-20 signed opportunities must have positive net mean",
       SIGNED_SESSION20_TREND20: "SIGNED_TREND20 + prior 8-20 signed opportunities in same target session must have positive net mean",
-      SIGNED_DUAL20_TREND20: "SIGNED_TREND20 + both global and session-specific causal edge gates"
+      SIGNED_DUAL20_TREND20: "SIGNED_TREND20 + both global and session-specific causal edge gates",
+      ROUTER20: "per target session, choose continuation or reversal from the prior 8-20 realized transitions; abstain if both net means <= 0",
+      ROUTER40: "same causal continuation/reversal router using prior 15-40 transitions per target session",
+      ROUTER20_BLEND60: "70% same-session 20-transition edge + 30% global 60-transition edge; choose continuation/reversal or abstain"
     },
     bySession,
     variants,
