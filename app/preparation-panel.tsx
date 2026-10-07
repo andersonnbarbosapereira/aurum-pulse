@@ -37,7 +37,58 @@ export default function PreparationPanel({initial}:{initial:Prep}){
     return()=>{alive=false;window.clearInterval(id);};
   },[]);
 
-  return <section className="prep-wrap">
+  const best=[...p.engines].sort((a,b)=>b.preparation-a.preparation)[0]??null;
+  const present=best
+    ? [...best.factors].filter(f=>f.active).sort((a,b)=>b.weight-a.weight).slice(0,6)
+    : [];
+  const pending=best?.missing??[];
+  const nextTrigger=(()=>{
+    if(!best)return"Sem leitura suficiente no momento.";
+    if(pending.some(x=>x.includes("BOS"))&&pending.some(x=>x.includes("deslocamento")))return"Aguardar BOS + deslocamento no fechamento M5.";
+    if(pending.some(x=>x.includes("BOS")))return"Aguardar BOS confirmado no fechamento M5.";
+    if(pending.some(x=>x.includes("deslocamento")))return"Aguardar deslocamento convincente no M5.";
+    if(pending.some(x=>x.includes("M15")))return"Aguardar alinhamento do M15 com a direção observada.";
+    if(pending.some(x=>x.includes("M1")))return"Aguardar confirmação do gatilho M1.";
+    if(pending.some(x=>x.includes("score")))return"O cenário precisa acumular mais confluências para atingir o score mínimo.";
+    if(best.riskPct>.35)return"Aguardar melhora do risco estrutural para ≤ 0,35%.";
+    return"Os requisitos intermediários estão completos; o FINAL_V1 ainda aplica o portão final e timing ao vivo.";
+  })();
+
+  return <>
+  <section className="observation-card card">
+    <div className="card-head">
+      <span>O que o motor está observando agora</span>
+      <span className="muted">Leitura do último M5 fechado</span>
+    </div>
+    {best?<div className="observation-layout">
+      <div className="observation-summary">
+        <small>Cenário mais próximo</small>
+        <h3>{side(best.side)} · {name(best.engine)}</h3>
+        <p>Preparação <strong className={tone(best.preparation)}>{best.preparation}%</strong> · score {best.rawScore}/{best.threshold} · risco estrutural {best.riskPct.toFixed(3)}%.</p>
+        <div className="next-trigger"><small>Próximo gatilho que estamos esperando</small><strong>{nextTrigger}</strong></div>
+      </div>
+      <div className="observation-columns">
+        <div>
+          <small>Já presente</small>
+          <div className="observation-list good">
+            {best.m1Confirmed&&<span>✓ Confirmação M1</span>}
+            {best.riskPct<=.35&&<span>✓ Risco estrutural aceitável</span>}
+            {present.map(f=><span key={f.key}>✓ {f.label} <b>+{f.weight}</b></span>)}
+            {!best.m1Confirmed&&!present.length&&<span>Sem confirmação relevante ainda.</span>}
+          </div>
+        </div>
+        <div>
+          <small>Falta para avançar</small>
+          <div className="observation-list pending">
+            {pending.length?pending.map(x=><span key={x}>⏳ {x}</span>):<span>✓ Nenhum requisito intermediário pendente.</span>}
+          </div>
+        </div>
+      </div>
+    </div>:<div className="intel-loading">Aguardando dados suficientes para descrever o cenário.</div>}
+    <div className="observation-state"><span>Estado atual</span><strong>AGUARDAR até o FINAL_V1 validar todas as condições.</strong></div>
+  </section>
+
+  <section className="prep-wrap">
     <article className="card prep-main">
       <div className="card-head">
         <span>Preparação do mercado</span>
@@ -82,5 +133,6 @@ export default function PreparationPanel({initial}:{initial:Prep}){
         </div>
       </details>)}
     </div>
-  </section>;
+  </section>
+  </>;
 }
