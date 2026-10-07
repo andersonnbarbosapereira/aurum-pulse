@@ -4,7 +4,7 @@ type P={family:string;id:string;params:any;trades:T[]};
 function sweep(a:C[],p:any){
   const out:T[]=[],lv=buildLevels(a);let lock=0;
   for(let i=60;i<a.length-40;i++){const c=a[i];if(!inWindow(c.time)||c.time<lock)continue;const av=atr(a,i-1),d=day(c.time),pd=lv.pd.get(d),as=lv.asia.get(d);if(!av)continue;
-    const levels:number[]=[];if((p.source==="PD"||p.source==="BOTH")&&pd)levels.push(pd.lo,pd.hi);if((p.source==="ASIA"||p.source==="BOTH")&&as)levels.push(as.lo,as.hi);
+    const levels:number[]=[];if((p.source==="PD"||p.source==="BOTH")&&pd)levels.push(pd.lo,pd.hi);if((p.source==="ASIA"||p.source==="BOTH")&&as&&(new Date(c.time).getUTCHours()*60+new Date(c.time).getUTCMinutes())>=360)levels.push(as.lo,as.hi);
     let side:"LONG"|"SHORT"|null=null,ref=NaN;
     for(const l of levels){if(c.low<l&&c.close>l&&(Math.min(c.open,c.close)-c.low)/(c.high-c.low||1)>=p.wick){side="LONG";ref=l;break}if(c.high>l&&c.close<l&&(c.high-Math.max(c.open,c.close))/(c.high-c.low||1)>=p.wick){side="SHORT";ref=l;break}}
     if(!side)continue;
