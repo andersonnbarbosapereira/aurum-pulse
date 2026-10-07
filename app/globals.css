@@ -174,3 +174,21 @@ body{
 .auto-refresh small{color:#68727e}.refresh-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 7px rgba(111,212,167,.45)}.refresh-dot.refreshing{background:var(--gold);animation:pulse-refresh .8s infinite alternate}
 @keyframes pulse-refresh{from{opacity:.45;transform:scale(.85)}to{opacity:1;transform:scale(1.15)}}
 @media(max-width:700px){.auto-refresh{top:5px;margin-bottom:5px}}
+
+.observation-card{margin-bottom:14px}
+.observation-layout{display:grid;grid-template-columns:.9fr 1.1fr;gap:16px;margin-top:16px}
+.observation-summary small,.observation-columns>div>small,.next-trigger small,.observation-state span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.08em;font-weight:800}
+.observation-summary h3{margin:4px 0 7px;font-size:20px;letter-spacing:-.03em}
+.observation-summary p{margin:0;color:#b9c2cd;font-size:10px;line-height:1.5}
+.next-trigger{margin-top:14px;padding:12px;border:1px solid #3a3425;background:#17130d;border-radius:10px}
+.next-trigger strong{display:block;margin-top:5px;font-size:11px;color:var(--gold);line-height:1.4}
+.observation-columns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.observation-list{display:flex;flex-direction:column;gap:6px;margin-top:7px}
+.observation-list span{display:flex;justify-content:space-between;gap:8px;padding:7px 8px;border-radius:8px;border:1px solid #242c36;background:#0d1117;font-size:9px;line-height:1.35}
+.observation-list.good span{color:var(--green)}
+.observation-list.pending span{color:var(--amber)}
+.observation-list b{font-size:8px;color:inherit}
+.observation-state{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.observation-state strong{font-size:10px;color:#c4ccd6}
+@media(max-width:900px){.observation-layout{grid-template-columns:1fr}.observation-columns{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.observation-columns{grid-template-columns:1fr}.observation-state{align-items:flex-start;flex-direction:column}}
