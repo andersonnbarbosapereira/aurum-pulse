@@ -24,7 +24,7 @@ type SessionBar = {
 type Trade = {
   time: number;
   session: SessionName;
-  side: 1;
+  side: -1 | 1;
   grossRet: number;
   netRet: number;
 };
@@ -177,11 +177,21 @@ function buildAdaptiveVariants(sessions: SessionBar[], evalStart: number, cost =
     EDGE60_TREND20: [],
     EDGE20_TREND20: [],
     SESSION20_TREND20: [],
-    DUAL20_TREND20: []
+    DUAL20_TREND20: [],
+    SIGNED_TREND20: [],
+    SIGNED_EDGE20_TREND20: [],
+    SIGNED_SESSION20_TREND20: [],
+    SIGNED_DUAL20_TREND20: []
   };
 
   const history: number[] = [];
   const sessionHistory: Record<SessionName, number[]> = {
+    ASIA: [],
+    EUROPE: [],
+    US: []
+  };
+  const signedHistory: number[] = [];
+  const signedSessionHistory: Record<SessionName, number[]> = {
     ASIA: [],
     EUROPE: [],
     US: []
@@ -192,6 +202,36 @@ function buildAdaptiveVariants(sessions: SessionBar[], evalStart: number, cost =
     const prev = sessions[i - 1];
     const cur = sessions[i];
     if (!adjacent(prev, cur)) continue;
+
+    const trendSide: -1 | 0 | 1 = i >= 20
+      ? (prev.close > sessions[i - 20].close ? 1 : prev.close < sessions[i - 20].close ? -1 : 0)
+      : 0;
+    const prevSide: -1 | 0 | 1 = prev.ret > 0 ? 1 : prev.ret < 0 ? -1 : 0;
+
+    if (trendSide !== 0 && prevSide === trendSide) {
+      const signedNet = cur.ret * trendSide - cost;
+      const signedTrade: Trade = {
+        time: cur.end,
+        session: cur.session,
+        side: trendSide,
+        grossRet: cur.ret * trendSide,
+        netRet: signedNet
+      };
+      const sh20All = signedHistory.slice(-20);
+      const sh20Session = signedSessionHistory[cur.session].slice(-20);
+      const signedEdge20 = sh20All.length >= 12 && mean(sh20All) > 0;
+      const signedSession20 = sh20Session.length >= 8 && mean(sh20Session) > 0;
+
+      if (cur.end >= evalStart) {
+        variants.SIGNED_TREND20.push(signedTrade);
+        if (signedEdge20) variants.SIGNED_EDGE20_TREND20.push(signedTrade);
+        if (signedSession20) variants.SIGNED_SESSION20_TREND20.push(signedTrade);
+        if (signedEdge20 && signedSession20) variants.SIGNED_DUAL20_TREND20.push(signedTrade);
+      }
+
+      signedHistory.push(signedNet);
+      signedSessionHistory[cur.session].push(signedNet);
+    }
 
     if (prev.ret < 0) continue;
     baseCandidates++;
@@ -330,7 +370,11 @@ export function runSessionFlowLab(raw: Raw[], evalDays = 180) {
       EDGE60_TREND20: "EDGE60 and TREND20 together",
       EDGE20_TREND20: "fast causal regime gate: prior 12-20 base opportunities positive + TREND20",
       SESSION20_TREND20: "session-specific gate: prior 8-20 opportunities in the same target session positive + TREND20",
-      DUAL20_TREND20: "EDGE20 and SESSION20 and TREND20 together; no current outcome used"
+      DUAL20_TREND20: "EDGE20 and SESSION20 and TREND20 together; no current outcome used",
+      SIGNED_TREND20: "bidirectional: trade only when previous session return agrees with 20-session trend direction",
+      SIGNED_EDGE20_TREND20: "SIGNED_TREND20 + prior 12-20 signed opportunities must have positive net mean",
+      SIGNED_SESSION20_TREND20: "SIGNED_TREND20 + prior 8-20 signed opportunities in same target session must have positive net mean",
+      SIGNED_DUAL20_TREND20: "SIGNED_TREND20 + both global and session-specific causal edge gates"
     },
     bySession,
     variants,
