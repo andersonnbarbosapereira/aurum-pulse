@@ -2,7 +2,9 @@ type Raw=any;
 type Session="ASIA"|"EUROPE"|"US";
 type C={time:number;open:number;high:number;low:number;close:number};
 type S={date:string;session:Session;start:number;end:number;bars:C[];open30Ret:number;open30Range:number;entry:number;exit:number};
-type T={time:number;date:string;session:Session;side:-1|1;gross:number;net:number};\ntype Mode="M"|"R";\ntype MapSpec=Record<Session,Mode>;
+type T={time:number;date:string;session:Session;side:-1|1;gross:number;net:number};
+type Mode="M"|"R";
+type MapSpec=Record<Session,Mode>;
 
 function mid(v:any){const b=Number(v?.bid),a=Number(v?.ask??v?.offer);if(Number.isFinite(b)&&Number.isFinite(a))return(b+a)/2;if(Number.isFinite(b))return b;if(Number.isFinite(a))return a;return NaN}
 function norm(r:Raw):C|null{const s=String(r?.snapshotTimeUTC??r?.snapshotTime??r?.time??""),time=Date.parse(s.endsWith("Z")?s:s+"Z"),open=mid(r?.openPrice),high=mid(r?.highPrice),low=mid(r?.lowPrice),close=mid(r?.closePrice);return[time,open,high,low,close].every(Number.isFinite)?{time,open,high,low,close}:null}
