@@ -45,10 +45,11 @@ export type Sig = { i: number; dir: 1 | -1; stop: number; tp: number | null; max
 export type Trade = { t: number; dir: 1 | -1; entry: number; risk: number; R: number; bars: number; tag?: string; meta?: any; exit: string };
 export const COST = Number(process.env.COST ?? 0.5); // pontos por operação (spread+derrapagem)
 /** Entra na ABERTURA do M5 seguinte ao sinal. Stop tem prioridade no mesmo candle. Uma posição por vez por família. */
-export function simulate(sigs: Sig[], cost = COST): Trade[] {
-  const out: Trade[] = []; let busyUntil = -1;
+export function simulate(sigs: Sig[], cost = COST, maxOpen = 1): Trade[] {
+  const out: Trade[] = []; let busyUntil = -1; const opens: number[] = [];
   for (let s of sigs.sort((a, b) => a.i - b.i)) {
-    if (s.i <= busyUntil || s.i + 1 >= M5.length) continue;
+    if (s.i + 1 >= M5.length) continue;
+    if (maxOpen === 1) { if (s.i <= busyUntil) continue; } else { for (let q = opens.length - 1; q >= 0; q--) if (opens[q] < s.i) opens.splice(q, 1); if (opens.length >= maxOpen) continue; }
     const e = M5[s.i + 1].o, risk = Math.abs(e - s.stop);
     if (!(risk > 0) || (s.dir === 1 ? s.stop >= e : s.stop <= e)) continue;
     if ((s as any).tpR) s = { ...s, tp: e + s.dir * (s as any).tpR * risk };
@@ -68,7 +69,7 @@ export function simulate(sigs: Sig[], cost = COST): Trade[] {
     if (!Number.isFinite(R)) { j = Math.min(j, M5.length - 1); R = ((M5[j].c - e) * s.dir) / risk; }
     if (part && partDone) R = banked + (1 - part.frac) * R;
     out.push({ t: M5[s.i].t, dir: s.dir, entry: e, risk, R: R - cost / risk, bars: j - s.i, tag: s.tag, meta: s.meta, exit: why });
-    busyUntil = j;
+    busyUntil = j; opens.push(j);
   }
   return out;
 }

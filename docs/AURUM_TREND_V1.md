@@ -82,3 +82,32 @@ Limitações:
 1. Acompanhar o modo sombra no painel por algumas semanas e comparar com o recálculo na Capital.
 2. Se o forward confirmar, ativar o aviso no Telegram para sinal novo e para mudança de stop (precisa de registro próprio, separado do LIVE_V2).
 3. Opcional: estudar o recuo no M15 (F1b) como terceiro módulo, só se melhorar com custo real.
+
+## Abordagens alternativas testadas (2026-10-08, lote fixo 0,01)
+
+**1. Frequência e lucro com lote mínimo** (`freq.mts`, `port3.mts`)
+- Sem a parcial, que não é possível em 0,01, o módulo A melhora: +0,55R por operação.
+
+| Opção | Ops/mês | Média | US$/mês 2025–26 | Pior queda 2025–26 | Anos positivos |
+|---|---|---|---|---|---|
+| A+B | 3,7 | +0,54R | 193 | −387 | 8/9 |
+| A+B, até 2 posições cada | 6,6 | +0,49R | 313 | −647 | 8/9 |
+| Várias escalas (canais H1 12/24/72 + H4 30/60) | 10,3 | +0,49R | 471 | −1.306 | 7/9 |
+| Várias escalas + recuo no M15 | 18,3 | +0,42R | 518 | −1.500 | 7/9 |
+
+Mais frequência vem sempre com queda maior, porque as posições estão todas na mesma tendência.
+
+**2. Modelo estatístico walk-forward** (`ml_data.mts`, `ml_wf.mts`) — **reprovado**
+- Montagem:
+  - Uma amostra por fechamento de H1 e por lado, com 31 características (momentum em vários prazos, distâncias às EMAs H1/H4/D1, IFR, ADX, volatilidade, sessão, posição no range, máxima/mínima do dia anterior).
+  - Rótulo de barreira tripla.
+  - Modelos: logística L2 e GBDT raso.
+  - Cada ano de 2020 a 2026 é treinado só com os anos anteriores.
+- Resultado: em todas as 16 combinações (barreiras 1,5/1/8h, 2/1/24h e 3/1,5/48h × limites de 2% a 20%), a média foi negativa ou zero (−0,22R a 0,00R).
+- Conclusão: as características padrão não preveem a direção de 8 a 48h do ouro fora da amostra.
+
+**3. Outras entradas e saídas no mesmo contexto aprovado** (`entryexit.mts`)
+- Entradas testadas: a mercado, limitada no reteste do nível rompido e limitada num recuo de 0,5 ATR.
+- Saídas testadas: trailing ATR, fechamento do H1 contra a EMA50, virada da tendência H4, stop no último fundo/topo do H1, e trailing + virada do H4.
+- Resultado: todas ficaram entre +0,27R e +0,57R. Nenhuma superou a combinação atual (mercado + trailing ATR) de forma consistente.
+- A entrada no reteste perde justamente os rompimentos fortes: 2025–26 rendeu US$ 26/mês, contra US$ 93/mês da entrada a mercado.
