@@ -90,3 +90,40 @@ Com os 8 setups ligados (os 3 extras incluídos): cerca de 31 operações/mês, 
 - Conclusão: com US$ 500 o motor pode render bem, como em 2025–26, mas um ano lateral como 2022 pode zerar a banca.
 - Regra prudente: **cada 0,01 de lote precisa de cerca de US$ 1.500 de banca**, o que deixa a pior queda em menos de 50%.
 - Portanto: 0,01 até cerca de US$ 3.000 e **0,02 a partir de cerca de US$ 3.000** (prudente, pior queda < 50%). Subir para 0,02 já em US$ 1.500 é a versão agressiva: com 0,02 a pior queda histórica (cerca de US$ 1.360) seria cerca de 90% da banca.
+
+## Análise profunda das operações (2026-10-08)
+
+Feita com os scripts `research/aurum_trend_v1/deep*.mts`, no caminho M5, sobre a carteira com gestão de risco.
+- **Base:** 1.481 operações, +0,43R por operação, acerto 27%, R/ano de +56 no treino, +89 na validação e +108 no teste, pior queda de 39R.
+- **Ordem de grandeza:** 39R equivalem a cerca de US$ 700 com 0,01 lote, no risco atual de cerca de US$ 18 por operação.
+
+**Vencedoras: quanto ganham e quanto devolvem**
+- Pico mediano de +6,9R e resultado mediano de +3,2R: devolvem cerca de 53% do pico. No total foram 1.415R devolvidos.
+- Isso é estrutural: 21% das operações chegam a +5R ou mais e são elas que pagam tudo.
+- Testei proteções: empate em +1/+1,5/+2/+2,5/+3R, travas de 30–50% do pico, stop móvel de 3/4/5 ATR, degraus, saída pela EMA20/EMA50 do H1, virada do H4, exaustão a mais de 3/4/5 ATR da EMA20 e saída por falta de avanço.
+- **Nenhuma melhorou o treino e a validação ao mesmo tempo.** A mais próxima foi "depois de +6R, stop móvel de 2 ATR": +64R/ano no treino, mas pior na validação.
+
+**Perdedoras: sinais de derrota no começo da operação**
+- 38% das perdedoras chegaram a +1R e 17% a +2R antes de perder.
+- Os sinais de derrota nas primeiras 6h acertam 80–90%: "−0,5R no fechamento do H1", "IFR7 contra", "fechou além da mínima/máxima da vela de sinal", "devolveu a vela de sinal".
+- **Cortar não compensa**, porque os 10–20% que viram vencedoras grandes valem mais. Exemplo: a regra de −0,5R economiza 117R e perde 181R.
+- O melhor desses cortes ("IFR7 do H1 > 10 pontos contra nas primeiras 6h") só empata com a regra atual.
+
+**Filtros de entrada**
+- Testei 47–65 características: IFR 7/14/21, ADX, eficiência 10/20, volatilidade, largura de Bollinger, distância às EMAs 20/50/100/200, inclinação, MACD em H1/H4/D1, estrutura de topos/fundos no H4, espaço até pivôs, máximas/mínimas da semana e números redondos de 10/50, consumo do range do dia, idade da tendência, pavio e corpo da vela de sinal, hora e dia.
+- Só o "pavio contra na vela de sinal" ficou abaixo da média nos 3 períodos. Na carteira, porém, os vizinhos oscilam: 15% e 20% pioram e 25% melhora. Por isso não foi adotado.
+
+**Grandes quedas (20 episódios ≥ 15R entre 2018 e 2026)**
+- Quase todas aconteceram com o ouro andando de lado depois de uma tendência (eficiência do movimento diário de 0,00–0,20), com o motor insistindo numa direção.
+- Exemplos: jun–ago/2025 (42 compras, ouro −1,2%) e mai–jul/2022 (31 vendas, ouro parado). A eficiência do D1 na entrada foi de 0,19 nas quedas contra 0,28 fora delas.
+- Freios testados que pioraram:
+  - pausar quando as últimas 10/15/20 operações somam −6 a −12R (treino de +21 a +42R/ano, contra +56);
+  - operar só com eficiência D1 ≥ 0,10–0,25.
+- O freio chega atrasado: pausa no fim da lateralidade e perde o começo da tendência seguinte.
+
+**Saída parcial (exige 0,02 lote ou mais)**
+- "Metade em +2R e o resto empata": acerto sobe de 27% para 39% e a pior queda cai de 39R para 30R (−23%).
+- Em troca, o lucro cai cerca de 25–30% (R/ano: treino +47, validação +65, teste +74).
+- É uma opção de suavidade para quando a banca permitir 0,02, não de lucro.
+
+**Conclusão:** as regras atuais de entrada e saída estão num ótimo local robusto. As correções "intuitivas" pioram fora da amostra. O risco de quedas em mercado lateral é o custo de seguir tendência e se controla pelo tamanho da banca (cerca de US$ 1.500 por 0,01 de lote), não por filtros.
