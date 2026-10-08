@@ -1,6 +1,6 @@
 # ALPHA_2 Research Status
 
-_Last update: 2026-10-08_
+_Last update: 2026-10-08 (Phase A done)_
 
 ## Objective
 
@@ -345,7 +345,32 @@ Planned / coded rules:
 - no VWAP entry gate in first faithful replication
 - no optimization before baseline replication
 
-This candidate is currently the next major research track.
+### Phase A result (2026-10-08) — REJECTED
+
+**Capital.com, four ~180-day windows** (`/api/goldea-sweep-lab?offset=0|180|360|540`, faithful VWAP exit, no optimization):
+
+| Window | Trades | Raw avgR | Raw PF | Net 0.5pt avgR | Net PF | Stress 1.5pt avgR | Positive months (net) |
+|---|---|---|---|---|---|---|---|
+| 2024-10 → 2025-04 | 93 | -0.056 | 0.79 | -0.110 | 0.63 | -0.217 | 14% |
+| 2025-04 → 2025-10 | 80 | +0.059 | 1.24 | +0.012 | 1.04 | -0.083 | 29% |
+| 2025-10 → 2026-04 | 88 | -0.043 | 0.82 | -0.065 | 0.74 | -0.110 | 43% |
+| 2026-04 → 2026-10 | 76 | -0.064 | 0.79 | -0.090 | 0.71 | -0.141 | 43% |
+
+Promotion gate failed in **all four windows** (even before costs in 3 of 4).
+
+**HistData M1 → M15, 2024-01 → 2026-09 (same production lab code, labeled separately)**
+- HistData has no volume: anchored VWAP used the number of M1 bars per M15 bar as a volume proxy.
+- Parity check against Capital on overlapping windows was close (e.g. 2025-04→10: HistData +0.052R raw vs Capital +0.059R; 2025-10→2026-04: -0.052R vs -0.043R).
+- Whole period, VWAP exit: 508 trades, raw +0.014R (PF 1.05), **net 0.5pt -0.032R (PF 0.89)**.
+- Semesters (net 0.5pt): 2024H1 +0.096 · 2024H2 -0.117 · 2025H1 -0.115 · 2025H2 +0.048 · 2026 -0.054.
+
+**Sensitivity: optional fixed R target** (supported by the original `backtester.py`, `target_r`), net 0.5pt, whole period:
+- 1R: -0.094R · 1.5R: -0.060R · 2R: -0.036R · 3R: -0.030R.
+- Every target fails 2025H1 and 2026 by -0.15R to -0.28R per trade; the good semesters (2024H1, 2025H2) are the same for every variant → regime artifact, not an exit problem.
+
+Note: the original GoldEA backtester applies **no spread/commission**. Its published OOS PF 1.30 is gross. Our gross results (PF 0.79–1.24 per window, 1.05 overall) do not reproduce it.
+
+Verdict: **GoldEA Sweep-and-Reclaim REJECTED as ALPHA_2.** No parameter search was run on it (that would only overfit a trigger that has no raw edge).
 
 ---
 
@@ -611,7 +636,7 @@ Therefore the next priority is:
 | Static Regime Reversion | Regime-dependent |
 | Conditional Expectancy Meta-Filter | Rejected |
 | Gold_Research ATR Stack | Reproduced in some regimes, rejected as universal ALPHA_2 |
-| GoldEA Sweep-and-Reclaim | **Next active candidate** |
-| HistData long-history extension | Planned |
+| GoldEA Sweep-and-Reclaim | Rejected (Phase A: 4 Capital windows + HistData 2024-2026) |
+| HistData long-history extension | In use (M1 2024-01 → 2026-09) |
 | ALPHA_2 production motor | Not yet approved |
 | LIVE_V3 shadow | Not yet started |
