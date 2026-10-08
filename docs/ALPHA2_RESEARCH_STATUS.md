@@ -400,6 +400,60 @@ Whenever HistData is used:
 
 ---
 
+# Phase C / G result (2026-10-08) — strategy-family bakeoff on HistData
+
+Data: HistData XAUUSD M1 2024-01 → 2026-09 (UTC), measured from 2024-05-01 (~640 trading days). Same data, same period, same metrics for all families. Train = 2024-05 → 2025-09, test = 2025-10 → 2026-09.
+
+Families:
+- **FINAL_V1 (Aurum)**: production code `buildIndependentCandidates` + `mergeCandidates` + final gate (BOS or 2+ engines, risk ≤ 0.35%), exit `RUNNER_3R` (`simulate`). Not modelled: live timing gate (≤ 0.25R deviation). FINAL_V1 research code applies **no cost**; costs below are added per trade.
+- **Market Motor 3 "zona com força"** (`market-ai-analyzer`): ZONA / ROMPE_RETESTE signals on a real zone with 0–2 touches and M15 RSI in favour (> +6.38 after sign). Exit at target 1 or stop, 12h limit. Already includes 0.26pt spread.
+- **Market Motor 4 "bloco em mercado indefinido"**: OB_CAPTURA H1/M15 signals with M15+H1+H4+D1 alignment 0 or +1 and M15 RSI not against (> −7.52).
+
+## Results with 0.5pt total cost per trade
+
+| Family | Trades | /day | avgR | PF | t | DD | Train | Test | Semesters 24H1* · 24H2 · 25H1 · 25H2 · 26 |
+|---|---|---|---|---|---|---|---|---|---|
+| FINAL_V1 | 1160 | 1.81 | **−0.05** | 0.92 | −1.2 | 107.7R | −0.13 | +0.13 | −0.37 · −0.09 · −0.11 · +0.01 · +0.11 |
+| Motor 3 | 154 | 0.24 | **+0.29** | 1.53 | 2.1 | 11.8R | +0.20 | +0.41 | +0.41 · +0.15 · −0.07 · +0.61 · +0.37 |
+| Motor 4 | 123 | 0.19 | **+0.34** | 1.64 | 2.3 | 13.4R | +0.39 | +0.27 | +0.94 · +0.17 · +0.08 · +0.48 · +0.35 |
+| Motors 3+4 | 277 | 0.43 | **+0.31** | 1.58 | 3.1 | 15.2R | +0.29 | +0.35 | +0.60 · +0.16 · +0.01 · +0.55 · +0.36 |
+
+*24H1 = May–Jun 2024 only.
+
+Cost sensitivity:
+- FINAL_V1 average R by total cost: 0pt +0.059 · 0.2pt +0.016 · 0.3pt −0.006 · 0.5pt −0.050 · 1.5pt −0.27. Median FINAL_V1 risk is only 5.15pt (vs 9.59pt for Motors 3/4), so spread eats most of its edge. 2026 alone is better (+0.125R at 0.3pt).
+- Motors 3+4 at 1.5pt stress: +0.18R (PF 1.28), still positive in train and test.
+- Capital.com live GOLD spread observed today: 0.75pt.
+
+Independence (0.5pt):
+- Daily R correlation FINAL_V1 × Motors 3+4: **0.01**.
+- Only 18 of 277 Motor 3/4 signals were within 1h of a FINAL_V1 signal in the same direction; 26 were within 1h of an opposite one.
+
+## Phase G robustness — Motors 3+4
+
+- Neighbour parameters: Motor 3 positive across touches 0–1 / 0–2 / 0–3 / 1–2 / 0–4 and RSI cut 3…12 (best area around touches ≤ 2, RSI > 5–8). Motor 4 positive for alignment 0..1, 0..0, 1..1, −1..1 and RSI cut −15…−5. It turns negative when RSI must already be in favour (> 0): this family works as a pullback into the block.
+- Long and short both positive (C +0.27R / V +0.36R).
+- Sessions (UTC entry hour): Asia +0.45 · London +0.21 · NY +0.20 · late NY +0.62. All positive.
+- Source engines: ZONA +0.21 · ROMPE_RETESTE +0.64 · OB_CAPTURA_H1 +0.23 · OB_CAPTURA_M15 +0.36.
+- Monte Carlo (5000 reorderings): median max DD 12.0R · 95% 18.8R · worst 30.5R.
+- Bootstrap of mean R: 5th percentile +0.13R, P(mean ≤ 0) ≈ 0%.
+- Weak spot: 2025H1 is roughly flat (+0.01R).
+
+Production-parity finding: the Market production filter accepted "no zone" signals (touches = −1, avg −0.12R) and alignment −1 for Motor 4, which the tested rule did not. Fixed in `market-ai-analyzer` commit `4960a5c` so production equals the tested rule.
+
+## Phase F (AI / meta-labeling) — not run
+
+Only ~155 Motor 3/4 trades fall in the train period. Any ML filter on top of rules that were themselves chosen on that train set would overfit. Revisit after the forward sample grows.
+
+## Verdict
+
+- **Motors 3+4 are the only family that passed every gate so far**: positive train and test, positive with 1.5pt stress, stable neighbour parameters, both sides, all sessions, and almost zero correlation with FINAL_V1.
+- **ALPHA_2 candidate = Motors 3+4**, frequency ~0.43/day.
+- They are already running live on market-ai-analyzer with a forward scoreboard (no orders), which serves as the shadow-forward stage. A LIVE_V3 mirror inside Aurum needs a design decision (port the engines vs read Market signals), plus a new Supabase table/function. Not done yet.
+- **Warning on FINAL_V1**: on HistData 2024-05 → 2026-09 its edge is gross only (+0.06R) and vanishes at ~0.3pt cost. FINAL_V1 stays frozen; this is recorded for the owner's decision, not changed.
+
+---
+
 # What has NOT been changed
 
 During this research:
@@ -638,5 +692,7 @@ Therefore the next priority is:
 | Gold_Research ATR Stack | Reproduced in some regimes, rejected as universal ALPHA_2 |
 | GoldEA Sweep-and-Reclaim | Rejected (Phase A: 4 Capital windows + HistData 2024-2026) |
 | HistData long-history extension | In use (M1 2024-01 → 2026-09) |
-| ALPHA_2 production motor | Not yet approved |
+| Market Motors 3+4 (zona com força + bloco lateral) | **Passed Phase C/G — ALPHA_2 candidate** |
+| FINAL_V1 cost check (HistData) | Gross +0.06R, ≈0 at 0.3pt, −0.05R at 0.5pt — owner decision |
+| ALPHA_2 production motor | Candidate chosen; LIVE_V3 design pending |
 | LIVE_V3 shadow | Not yet started |
