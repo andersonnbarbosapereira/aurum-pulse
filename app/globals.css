@@ -204,3 +204,5 @@ body{
 .trend-note{font-size:11px;margin:12px 0 0}
 .trend-table{display:grid;gap:4px;margin-top:8px}.trend-tr{display:grid;grid-template-columns:1.1fr 1.4fr .8fr 1fr .9fr .7fr;gap:8px;font-size:12px;padding:6px 0;border-bottom:1px solid #1c222b}
 @media (max-width:900px){.trend-grid{grid-template-columns:1fr}.trend-tr{grid-template-columns:1fr 1fr 1fr;row-gap:2px}}
+.trend-tr-setup{grid-template-columns:2.6fr .7fr .9fr .7fr .8fr;align-items:center}.trend-tr-setup small{font-size:11px}
+@media (max-width:900px){.trend-tr-setup{grid-template-columns:1fr 1fr}}
