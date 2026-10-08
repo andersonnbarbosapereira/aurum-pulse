@@ -65,3 +65,28 @@ Com os 8 setups ligados (os 3 extras incluídos): cerca de 31 operações/mês, 
 - `lib/trend-engine.ts`: motor V2, com `TREND_SETUPS` (ativos e extras).
 - `app/api/trend-engine/route.ts`: cerca de 1 ano de H1 da Capital, estatísticas por setup em R e em US$ com 0,01 lote.
 - `app/trend-panel.tsx`: seção "NOVO MOTOR · AURUM_TREND_V2 · SOMBRA".
+
+## Gestão de risco e banca (estudo de 2026-10-08, lote 0,01 = US$ 1 por ponto)
+
+**Risco máximo por operação ("número mágico"): stop até 0,7% do preço, cerca de US$ 29 com 0,01 lote a 4.100.**
+- Em 2018–2022, operações com stop acima de 0,7% do preço ficaram negativas (−0,02R e −0,37R), enquanto as menores eram positivas.
+- Em 2025–26 o stop mediano com 0,01 lote ficou em cerca de US$ 23; o percentil 90 em US$ 43.
+
+**Carteira com gestão de risco (`RISK_RULES` em `lib/trend-engine.ts`)**
+- Setups: vela de força, recuo na EMA20, rompimento 24h e rompimento H4. O canal 12h foi desligado porque aumenta a queda sem melhorar a relação ganho/queda.
+- Máximo de 3 posições abertas.
+- Resultado: cerca de 14 operações/mês e cerca de 73R/ano, positivo em todos os 9 anos (R por ano: 12 · 57 · 105 · 50 · 40 · 81 · 109 · 123 · 63).
+- A pior queda cai de cerca de 67R (sem regras) para cerca de 41R.
+
+**Simulação de banca começando com US$ 500**
+
+| Regra de lote | 2025-01 → 2026-09 (real) | Janelas de 12 meses 2018–2026 (a preço de hoje) |
+|---|---|---|
+| 0,01 fixo | US$ 500 → US$ 2.807 · menor saldo US$ 469 · média US$ 105/mês | mediana US$ 1.787 · 14 de 32 janelas desceram abaixo de US$ 250 · 5 abaixo de US$ 150 · 2 quebraram (2022) |
+| 0,02 a partir de US$ 1.000 | → US$ 4.069 · queda máx. US$ 812 · média US$ 162/mês | mediana US$ 1.940 · mesmos riscos nas janelas ruins |
+| 0,02 a partir de US$ 1.500 | → US$ 3.913 · média US$ 155/mês | mediana US$ 1.717 |
+
+- A pior queda histórica com 0,01 lote (a preço de hoje) é de cerca de US$ 682. Isso equivale a 136% de uma banca de US$ 500, 68% de US$ 1.000 e 45% de US$ 1.500.
+- Conclusão: com US$ 500 o motor pode render bem, como em 2025–26, mas um ano lateral como 2022 pode zerar a banca.
+- Regra prudente: **cada 0,01 de lote precisa de cerca de US$ 1.500 de banca**, o que deixa a pior queda em menos de 50%.
+- Para dar o primeiro passo com 0,02 no ritmo dos números acima, a banca precisa ter pelo menos cerca de US$ 1.500. Fazer isso a partir de US$ 1.000 aumenta o ganho, mas também dobra o risco de queda.

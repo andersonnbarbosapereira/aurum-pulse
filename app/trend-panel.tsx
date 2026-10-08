@@ -43,7 +43,7 @@ export default function TrendPanel() {
     <>
       <section className="section-headline">
         <div><span className="section-kicker">NOVO MOTOR · AURUM_TREND_V2 · SOMBRA</span><h2>Carteira de setups a favor da tendência</h2></div>
-        <span className="muted">5 setups independentes · sem Telegram · execução manual</span>
+        <span className="muted">4 setups · máx. 3 abertas · stop ≤ 0,7% do preço · sem Telegram</span>
       </section>
       {!d ? (
         <article className="card"><p className="muted">{err ? "Dados indisponíveis no momento. Nova tentativa em 1 min." : "Carregando o motor de tendência…"}</p></article>
@@ -80,7 +80,7 @@ export default function TrendPanel() {
               <div><small>Total 0,01 lote</small><strong className={d.stats.usd001 >= 0 ? "positive-text" : "negative-text"}>{usd(d.stats.usd001)}</strong></div>
               <div><small>Por mês 0,01</small><strong className={d.stats.usd001 >= 0 ? "positive-text" : "negative-text"}>{usd(d.stats.usd001 / months)}</strong></div>
             </div>
-            <p className="muted trend-note">Sem descontar spread. Histórico 2018–2026 (HistData, custo 0,5 pt): ~23 operações/mês, +0,42R por operação, positivo em todos os 9 anos; com o tamanho de stop atual ≈ US$ 250/mês em média com 0,01 lote. Pior queda histórica ≈ US$ 1.240 — meses negativos são normais (~45%).</p>
+            <p className="muted trend-note">Sem descontar spread. Gestão de risco: no máximo 3 operações abertas e nenhuma com stop acima de 0,7% do preço (≈ US$ {(0.007 * (d.active[0]?.entry ?? 4100)).toFixed(0)} com 0,01 lote). Histórico 2018–2026: ~14 operações/mês, positivo em todos os 9 anos. Pior queda histórica com 0,01 lote ≈ US$ 680 — por isso cada 0,01 de lote pede ~US$ 1.500 de banca (0,02 só a partir de US$ 3.000 para a mesma folga).</p>
           </article>
 
           <article className="card trend-wide">

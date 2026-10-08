@@ -16,7 +16,7 @@ type Ses = "todas" | "Londres+NY" | "NY";
 export const TREND_SETUPS: Record<TrendModule, { label: string; ctx: Ctx; ses: Ses; stopAtr: number; active: boolean; desc: string }> = {
   VELA_FORCA: { label: "Vela de força", ctx: "D1", ses: "Londres+NY", stopAtr: 1.5, active: true, desc: "H1 com corpo > 1,8× a mediana das 20 anteriores, fechando no quarto final, a favor do D1" },
   RECUO_EMA20: { label: "Recuo na EMA20", ctx: "H4+D1", ses: "Londres+NY", stopAtr: 1.5, active: true, desc: "tocou a EMA20 do H1 nas 6 velas anteriores e fechou rompendo as 3 últimas, a favor do H4 e do D1" },
-  CANAL_12H: { label: "Canal 12h", ctx: "D1", ses: "todas", stopAtr: 1.5, active: true, desc: "H1 fecha além da máxima/mínima das 12 horas anteriores, a favor do D1" },
+  CANAL_12H: { label: "Canal 12h", ctx: "D1", ses: "todas", stopAtr: 1.5, active: false, desc: "H1 fecha além da máxima/mínima das 12 horas anteriores, a favor do D1 (desligado na gestão de risco: piora a queda máxima)" },
   ROMPIMENTO_H1: { label: "Rompimento 24h", ctx: "H4+D1+naoEsticado", ses: "todas", stopAtr: 2.5, active: true, desc: "H1 fecha além das 24 horas anteriores, H4 e D1 a favor, H4 a no máximo 2,5 ATR da EMA50" },
   ROMPIMENTO_H4: { label: "Rompimento H4", ctx: "D1", ses: "todas", stopAtr: 2.5, active: true, desc: "H4 fecha além do canal das 60 velas H4 anteriores, a favor do D1" },
   ENGOLFO_EMA: { label: "Engolfo na EMA20", ctx: "H4+D1", ses: "Londres+NY", stopAtr: 1.5, active: false, desc: "engolfo tocando a EMA20 do H1 (extra, desligado)" },
@@ -24,6 +24,9 @@ export const TREND_SETUPS: Record<TrendModule, { label: string; ctx: Ctx; ses: S
   INSIDE_BAR: { label: "Inside bar", ctx: "D1", ses: "Londres+NY", stopAtr: 2.5, active: false, desc: "rompimento da vela-mãe (extra, desligado)" },
 };
 const TRAIL_ATR = 6, MAX_HOURS = 240;
+/** Gestão de risco (estudo de banca 2026-10-08): stop acima de 0,7% do preço rendeu negativo no treino (≈ US$ 29 com 0,01 lote a 4.100);
+ *  no máximo 3 posições abertas ao mesmo tempo (a pior queda cai de ~67R para ~41R). */
+export const RISK_RULES = { maxStopPct: 0.7, maxOpen: 3 } as const;
 
 const nyOffset = (t: number) => {
   const d = new Date(t * 1000), y = d.getUTCFullYear();
@@ -62,7 +65,7 @@ export type TrendState = {
 };
 
 /** Roda a carteira sobre H1 FECHADOS (ordem crescente). Recalcula sinais e gestão de forma determinística. */
-export function runTrendEngine(h1In: Candle[], opts: { includeInactive?: boolean } = {}) {
+export function runTrendEngine(h1In: Candle[], opts: { includeInactive?: boolean; noRiskRules?: boolean } = {}) {
   const b = h1In.filter((c) => [c.open, c.high, c.low, c.close].every(Number.isFinite)).sort((x, y) => x.time - y.time);
   const n = b.length;
   const H4 = aggregate(b, keyH4), D1 = aggregate(b, keyD1), c4 = closedMap(H4, n), cD = closedMap(D1, n);
@@ -105,6 +108,11 @@ export function runTrendEngine(h1In: Candle[], opts: { includeInactive?: boolean
       const S = TREND_SETUPS[mod];
       if ((!S.active && !opts.includeInactive) || k <= (busy[mod] ?? -1) || !ctxOk(S.ctx, k, d) || !sesOk(S.ses, k)) continue;
       const risk = S.stopAtr * A[k], side = d === 1 ? "LONG" : "SHORT";
+      if (!opts.noRiskRules) {
+        if ((risk / b[k].close) * 100 > RISK_RULES.maxStopPct) continue;
+        const openNow = trades.filter((t) => t.entryTime <= b[k].time + 3600 && (t.status === "ABERTA" || (t.exitTime ?? 0) > b[k].time + 3600)).length;
+        if (openNow >= RISK_RULES.maxOpen) continue;
+      }
       if (k + 1 >= n) { // sinal no último H1 fechado: entrada agora
         const e = b[k].close;
         trades.push({ module: mod, side, signalTime: b[k].time + 3600, entryTime: b[k].time + 3600, entry: e, stop: e - d * risk, risk, currentStop: e - d * risk, status: "ABERTA", bestR: 0 });
