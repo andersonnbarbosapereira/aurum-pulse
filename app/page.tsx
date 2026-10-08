@@ -5,6 +5,7 @@ import LivePrice from "@/app/live-price";
 import PreparationPanel from "@/app/preparation-panel";
 import DecisionIntelligence from "@/app/decision-intelligence";
 import AutoRefresh from "@/app/auto-refresh";
+import TrendPanel from "@/app/trend-panel";
 
 export const dynamic="force-dynamic";
 
@@ -155,6 +156,8 @@ export default async function Home(){
         </div>
       </article>
     </section>
+
+    <TrendPanel />
 
     <section className="section-headline"><div><span className="section-kicker">PREPARAÇÃO M5</span><h2>Como o mercado está se aproximando de um setup</h2></div><span className="muted">Informativo · não altera o FINAL_V1</span></section>
     <PreparationPanel initial={market.preparation} />

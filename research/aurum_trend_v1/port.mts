@@ -1,0 +1,22 @@
+import { M5, H1, H4, simulate, line, type Sig } from "./lib.mts";
+import { F2, F2b, F1b, I, CI } from "./families.mts";
+const ext = (s: Sig) => { const k4 = CI.c4[s.i]; return ((H4.b[k4].c - I.h4.e50[k4]) / I.h4.atr[k4]) * s.dir; };
+const adx4 = (s: Sig) => I.h4.adx[CI.c4[s.i]];
+const P = { part: { frac: 0.33, R: 2 } };
+const A = F2b({ n: 24, stopAtr: 2.5, trail: 6, flt: "both" }).map((s) => ({ ...s, ...P }));
+console.log("Módulo A (rompimento H1 alinhado H4+D1) — filtro 'não perseguir' (distância à EMA50 do H4, em ATR):");
+console.log(line("A sem filtro", simulate(A as any)));
+for (const m of [1.5, 2, 2.5, 3, 3.5]) console.log(line(`A com ext H4 ≤ ${m}`, simulate(A.filter((s) => ext(s) <= m) as any)));
+console.log("filtro ADX H4 (rompimento saindo de compressão):");
+for (const m of [18, 22, 26, 30]) console.log(line(`A com ADX H4 ≤ ${m}`, simulate(A.filter((s) => adx4(s) <= m) as any)));
+const B = F2({ n: 60, stopAtr: 2.5, trail: 4, d1: true }).map((s) => ({ ...s, tag: "B" }));
+const C = F1b({ rsiTh: 45, look: 4, trail: 4, d1: true }).map((s) => ({ ...s, tag: "C" }));
+const tA = simulate(A.filter((s) => ext(s) <= 3) as any), tB = simulate(B as any), tC = simulate(C as any);
+console.log("\nCarteira (cada módulo com 1 posição por vez, risco igual):");
+console.log(line("A (H1 rompimento, ext ≤ 3)", tA)); console.log(line("B (H4 rompimento, n60)", tB)); console.log(line("C (M15 recuo na tendência)", tC));
+const all = [...tA, ...tB, ...tC].sort((a, b) => a.t - b.t);
+console.log(line("A+B+C", all)); console.log(line("A+B", [...tA, ...tB].sort((a, b) => a.t - b.t)));
+// correlação diária entre módulos
+const day = (z: any[]) => { const m = new Map<number, number>(); for (const x of z) { const k = Math.floor(x.t / 86400); m.set(k, (m.get(k) ?? 0) + x.R); } return m; };
+const corr = (x: any[], y: any[]) => { const a = day(x), b = day(y), ks = [...new Set([...a.keys(), ...b.keys()])], u = ks.map((k) => a.get(k) ?? 0), v = ks.map((k) => b.get(k) ?? 0), mu = u.reduce((s, q) => s + q) / u.length, mv = v.reduce((s, q) => s + q) / v.length; return (u.reduce((s, q, i) => s + (q - mu) * (v[i] - mv), 0) / Math.sqrt(u.reduce((s, q) => s + (q - mu) ** 2, 0) * v.reduce((s, q) => s + (q - mv) ** 2, 0))).toFixed(2); };
+console.log(`correlação diária A×B ${corr(tA, tB)} · A×C ${corr(tA, tC)} · B×C ${corr(tB, tC)}`);

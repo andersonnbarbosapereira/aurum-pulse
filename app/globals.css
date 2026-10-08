@@ -192,3 +192,15 @@ body{
 .observation-state strong{font-size:10px;color:#c4ccd6}
 @media(max-width:900px){.observation-layout{grid-template-columns:1fr}.observation-columns{grid-template-columns:1fr 1fr}}
 @media(max-width:560px){.observation-columns{grid-template-columns:1fr}.observation-state{align-items:flex-start;flex-direction:column}}
+
+/* AURUM_TREND_V1 */
+.trend-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:22px}
+.trend-wide{grid-column:1/-1}
+.trend-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #1c222b;font-size:12px}
+.trend-row small,.trend-stats small{color:var(--muted);font-size:9px;letter-spacing:.06em;text-transform:uppercase;font-weight:750}
+.trend-ready{margin-top:10px;font-size:12px}.trend-ready b{font-size:11px;color:var(--gold)}.trend-ready p{margin:4px 0 0;color:var(--soft)}
+.trend-trade+.trend-trade{margin-top:12px}
+.trend-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}.trend-stats strong{display:block;font-size:16px;margin-top:3px}
+.trend-note{font-size:11px;margin:12px 0 0}
+.trend-table{display:grid;gap:4px;margin-top:8px}.trend-tr{display:grid;grid-template-columns:1.1fr 1.4fr .8fr 1fr .9fr .7fr;gap:8px;font-size:12px;padding:6px 0;border-bottom:1px solid #1c222b}
+@media (max-width:900px){.trend-grid{grid-template-columns:1fr}.trend-tr{grid-template-columns:1fr 1fr 1fr;row-gap:2px}}

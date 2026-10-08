@@ -1,0 +1,14 @@
+import { simulate, line, stats } from "./lib.mts";
+import { F1, F2, F3, F4, F5 } from "./families.mts";
+const fam = process.argv[2];
+const rows: { name: string; tr: any[] }[] = [];
+const add = (name: string, sigs: any[]) => rows.push({ name, tr: simulate(sigs) });
+if (fam === "F1") for (const rsiTh of [40, 45, 50]) for (const look of [4, 8]) for (const [tp, trail] of [[1.5, null], [2, null], [3, null], [null, 2.5], [null, 4]] as const) for (const d1 of [false, true]) add(`F1 rsi${rsiTh} look${look} tp${tp} trail${trail} d1${+d1}`, F1({ rsiTh, look, tp, trail, d1 }));
+if (fam === "F2") for (const n of [20, 40, 60]) for (const stopAtr of [1.5, 2.5]) for (const trail of [2, 3, 4]) for (const d1 of [false, true]) add(`F2 n${n} stop${stopAtr} trail${trail} d1${+d1}`, F2({ n, stopAtr, trail, d1 }));
+if (fam === "F3") for (const rsiTh of [50, 60, 65, 70]) for (const tp of [1, 1.5, 2, 3]) for (const [nyFrom, nyTo] of [[2, 12], [2, 8], [8, 12]]) add(`F3 rsi${rsiTh} tp${tp} ny${nyFrom}-${nyTo}`, F3({ rsiTh, tp, nyFrom, nyTo, minRiskAtr: 0.4 }));
+if (fam === "F4") for (const adxMax of [18, 22, 26]) for (const k of [2, 2.5]) for (const stopAtr of [0.5, 1]) add(`F4 adx${adxMax} k${k} stop${stopAtr}`, F4({ adxMax, k, stopAtr }));
+if (fam === "F5") for (const tp of [1, 1.5, 2]) for (const [mn, mx] of [[0.5, 3], [1, 4], [0.5, 2]]) for (const trend of [false, true]) add(`F5 tp${tp} rng${mn}-${mx} trend${+trend}`, F5({ tp, minRangeAtr: mn, maxRangeAtr: mx, trend }));
+rows.sort((a, b) => stats(b.tr).train - stats(a.tr).train);
+console.log(`${fam}: ${rows.length} variações — ordenadas pelo TREINO (2018–2022); validação e teste só conferem`);
+for (const r of rows.slice(0, 12)) console.log(line(r.name, r.tr));
+console.log("… piores:"); for (const r of rows.slice(-3)) console.log(line(r.name, r.tr));
