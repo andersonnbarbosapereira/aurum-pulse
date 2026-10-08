@@ -19,7 +19,7 @@ for (const [tn, cn, sn, sm] of SETUPS)
 SIGS.sort((x, y) => x.i - y.i);
 
 export type Ctx = { s: Sig; e: number; risk: number; j: number; i0: number; best: number; worst: number; stop: number; mfeR: number; maeR: number; rNow: number; bars: number; st: any };
-export type Policy = { name: string; onBar?: (c: Ctx) => { stop?: number; exit?: boolean } | void; trail?: number };
+export type Policy = { name: string; onBar?: (c: Ctx) => { stop?: number; exit?: boolean } | void; trail?: number; tpR?: number; stopAtr?: number; maxH?: number; noTrail?: boolean };
 export type Trade = { m: string; t: number; d: number; e: number; risk: number; a: number; R: number; mfe: number; mae: number; bars: number; barsToMfe: number; i0: number; iEnd: number; why: string; k: number };
 const COST = 0.5, MAXB = 12 * 240;
 /** stop primeiro no candle; depois atualiza melhor preço, trailing e a política (vale a partir do próximo candle); saída "exit" no fechamento do candle */
@@ -28,17 +28,19 @@ export function run(pol: Policy, sigs: Sig[] = SIGS, filter?: (s: Sig) => boolea
   for (const s of sigs) {
     if (filter && !filter(s)) continue;
     if (s.i <= (busy[s.m] ?? -1)) continue;
-    const i0 = s.i + 1, e = M5[i0].o, risk = s.sm * s.a, d = s.d; let stop = e - d * risk;
+    const sm = pol.stopAtr ?? s.sm; if (pol.stopAtr && !process.env.NOCAP && ((sm * s.a) / M5[s.i].c) * 100 > 0.7) continue;
+    const i0 = s.i + 1, e = M5[i0].o, risk = sm * s.a, d = s.d; let stop = e - d * risk; const tp = pol.tpR ? e + d * pol.tpR * risk : null; const maxB = pol.maxH ? pol.maxH * 12 : MAXB;
     const c: Ctx = { s, e, risk, j: i0, i0, best: e, worst: e, stop, mfeR: 0, maeR: 0, rNow: 0, bars: 0, st: {} };
     let R = NaN, why = "tempo", j = i0, tMfe = 0;
-    for (; j < M5.length && j < i0 + MAXB; j++) {
+    for (; j < M5.length && j < i0 + maxB; j++) {
       const b = M5[j];
       if (j > i0 && b.t - M5[j - 1].t > 4 * 86400) { R = ((M5[j - 1].c - e) * d) / risk; why = "gap"; break; }
       if (d === 1 ? b.l <= c.stop : b.h >= c.stop) { R = ((c.stop - e) * d) / risk; why = c.stop === e - d * risk ? "stop" : "stopMovel"; break; }
+      if (tp !== null && (d === 1 ? b.h >= tp : b.l <= tp)) { R = pol.tpR!; why = "alvo"; j++; c.best = tp; c.mfeR = pol.tpR!; break; }
       if (d === 1 ? b.h > c.best : b.l < c.best) { c.best = d === 1 ? b.h : b.l; tMfe = j - i0; }
       c.worst = d === 1 ? Math.min(c.worst, b.l) : Math.max(c.worst, b.h);
       c.mfeR = ((c.best - e) * d) / risk; c.maeR = ((e - c.worst) * d) / risk; c.rNow = ((b.c - e) * d) / risk; c.j = j; c.bars = j - i0 + 1;
-      const tr = pol.trail ?? 6; const ts = c.best - d * tr * s.a; c.stop = d === 1 ? Math.max(c.stop, ts) : Math.min(c.stop, ts);
+      if (!pol.noTrail) { const tr = pol.trail ?? 6; const ts = c.best - d * tr * s.a; c.stop = d === 1 ? Math.max(c.stop, ts) : Math.min(c.stop, ts); }
       const r = pol.onBar?.(c);
       if (r?.exit) { R = c.rNow; why = "regra"; j++; break; }
       if (r?.stop !== undefined) c.stop = d === 1 ? Math.max(c.stop, r.stop) : Math.min(c.stop, r.stop);

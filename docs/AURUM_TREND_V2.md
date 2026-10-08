@@ -127,3 +127,29 @@ Feita com os scripts `research/aurum_trend_v1/deep*.mts`, no caminho M5, sobre a
 - É uma opção de suavidade para quando a banca permitir 0,02, não de lucro.
 
 **Conclusão:** as regras atuais de entrada e saída estão num ótimo local robusto. As correções "intuitivas" pioram fora da amostra. O risco de quedas em mercado lateral é o custo de seguir tendência e se controla pelo tamanho da banca (cerca de US$ 1.500 por 0,01 de lote), não por filtros.
+
+## Alvo fixo de 1,5R / 2R / 2,5R (relação mínima de 1:1,5) — 2026-10-08
+
+**1. Nas entradas do V2** (`tp1.mts`): 72 variações, com stop de 1/1,5/2/2,5 ATR, prazo de 24/48/120h e com ou sem empate em +1R.
+- O acerto sobe para 37–51%, mas o resultado cai para +0,04R a +0,19R por operação, contra +0,43R com stop móvel.
+- No treino, o lucro fica entre +8 e +19R/ano, contra +56R/ano.
+- Em US$ com 0,01 lote (2025–26): 51–120 por mês, contra 184.
+
+**2. Busca combinatória só com alvo fixo** (`combo_tp.mts`): 19.578 combinações (19 gatilhos, incluindo 4 de recuo novos: EMA50, volta do IFR14, IFR5 e pin bar na EMA20).
+- 199 passaram no treino; 110 seguiram positivas na validação e no teste.
+- O melhor alvo é sempre o maior (2,5R). Com 1,5R, só o rompimento do dia anterior funcionou: 51% de acerto e +0,21R.
+
+**3. Carteira de 7 setups com alvo fixo, um por gatilho** (`tp2.mts`, M5), comparada com o V2:
+
+| | Ops/mês | Média | Acerto | R/ano (treino/valid./teste) | Pior queda | 2025–26, 0,01 lote |
+|---|---|---|---|---|---|---|
+| V2 com stop móvel (atual) | 14,1 | +0,43R | 27% | +56 / +89 / +108 | 39R (US$ 723) | US$ 184/mês |
+| Alvo fixo, máx. 3, teto de 0,7% | 14,4 | +0,20R | 38% | +12 / +66 / +63 | 44R (US$ 843) | US$ 126/mês |
+| Alvo fixo, máx. 5, sem teto | 24,3 | +0,23R | 39% | +32 / +93 / +130 (2019 negativo) | 51R (US$ 1.406) | US$ 313/mês |
+| Híbrido com 0,02 (metade no alvo de 2,5R, metade no stop móvel) | 14,0 | +0,32R | 34% | +41 / +70 / +73 | 32R (US$ 614) | US$ 126/mês |
+
+**Conclusão:** o alvo fixo aumenta o acerto, mas corta o ganho por unidade de risco pela metade ou mais. A razão entre ganho do treino e queda cai de 1,43 para 0,28–0,64.
+
+O valor maior em US$ da versão sem teto vem de stops maiores (2,5 ATR), ou seja, mais risco por operação, e não de uma vantagem maior.
+
+O stop móvel continua sendo a melhor saída. O híbrido com 0,02 é a alternativa para quem prefere mais acertos e uma queda menor.
