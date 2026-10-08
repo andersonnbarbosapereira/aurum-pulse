@@ -89,4 +89,4 @@ Com os 8 setups ligados (os 3 extras incluídos): cerca de 31 operações/mês, 
 - A pior queda histórica com 0,01 lote (a preço de hoje) é de cerca de US$ 682. Isso equivale a 136% de uma banca de US$ 500, 68% de US$ 1.000 e 45% de US$ 1.500.
 - Conclusão: com US$ 500 o motor pode render bem, como em 2025–26, mas um ano lateral como 2022 pode zerar a banca.
 - Regra prudente: **cada 0,01 de lote precisa de cerca de US$ 1.500 de banca**, o que deixa a pior queda em menos de 50%.
-- Para dar o primeiro passo com 0,02 no ritmo dos números acima, a banca precisa ter pelo menos cerca de US$ 1.500. Fazer isso a partir de US$ 1.000 aumenta o ganho, mas também dobra o risco de queda.
+- Portanto: 0,01 até cerca de US$ 3.000 e **0,02 a partir de cerca de US$ 3.000** (prudente, pior queda < 50%). Subir para 0,02 já em US$ 1.500 é a versão agressiva: com 0,02 a pior queda histórica (cerca de US$ 1.360) seria cerca de 90% da banca.
